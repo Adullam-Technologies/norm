@@ -6,5 +6,4 @@ export default defineConfig({
   dts: true,
   target: "node24",
   clean: true,
-  outExtensions: () => ({ js: ".js", dts: ".d.ts" }),
 });
