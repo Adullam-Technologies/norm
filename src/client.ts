@@ -220,6 +220,7 @@ export class NormClient {
     shape: TShape,
     opts?: {
       transform?: (data: z.infer<ZodObject<{ id: z.ZodString } & TShape>>) => TTransform;
+      args?: z.ZodType<TArgs>;
     },
   ): NormModel<
     [TTransform] extends [never] ? z.infer<ZodObject<{ id: z.ZodString } & TShape>> : TTransform,
