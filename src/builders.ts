@@ -114,15 +114,18 @@ export function select<P extends string>(opts: {
 
 // ─── relation ────────────────────────────────────────────────────────────────
 
-export function relation<P extends string>(opts: {
-  property: P;
-  single?: boolean;
-}): Branded<"relationIds", P, z.ZodType> {
+type RelationReturn<P extends string, S extends boolean | undefined> =
+  S extends true ? Branded<"relationIds", P, z.ZodType<string, z.ZodType>>
+  : Branded<"relationIds", P, z.ZodType<string[], z.ZodType>>;
+
+export function relation<P extends string, S extends boolean | undefined = undefined>(
+  opts: { property: P; single?: S },
+): RelationReturn<P, S> {
   const base = z.array(z.string());
   const schema = opts.single
     ? reg(base.transform((ids: string[]) => ids[0] ?? ""), opts.property, "relationIds")
     : reg(base, opts.property, "relationIds");
-  return brand(schema, "relationIds", opts.property);
+  return brand(schema, "relationIds", opts.property) as unknown as RelationReturn<P, S>;
 }
 
 // ─── rollupText ──────────────────────────────────────────────────────────────

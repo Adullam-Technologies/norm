@@ -6,4 +6,5 @@ export default defineConfig({
   dts: true,
   target: "node24",
   clean: true,
+  unbundle: true,
 });
