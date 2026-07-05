@@ -216,12 +216,16 @@ export class NormClient {
    * Define a Notion model bound to this client. Auto-injects `id: n.id()`
    * if not present in the shape.
    */
-  object<TShape extends ZodRawShape, TArgs = void>(
+  object<TShape extends ZodRawShape, TTransform = never, TArgs = void>(
     shape: TShape,
     opts?: {
-      transform?: (data: z.infer<ZodObject<TShape>>) => unknown;
+      transform?: (data: z.infer<ZodObject<{ id: z.ZodString } & TShape>>) => TTransform;
     },
-  ): NormModel<unknown, unknown, TArgs> {
+  ): NormModel<
+    [TTransform] extends [never] ? z.infer<ZodObject<{ id: z.ZodString } & TShape>> : TTransform,
+    unknown,
+    TArgs
+  > {
     return defineObject(this, shape, opts as never) as never;
   }
 }

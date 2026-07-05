@@ -97,7 +97,7 @@ describe("norm.object (model factory)", () => {
         youtubeUrl: n.url({ property: "youtube_url" }),
       });
 
-      const result = await Model.parsePage(lessons["lesson-1"]!) as { title: string; order: number; youtubeUrl: string | null };
+      const result = await Model.parsePage(lessons["lesson-1"]!);
       expect(result.title).toBe("Getting Started");
       expect(result.order).toBe(1);
       expect(result.youtubeUrl).toBe("https://youtube.com/watch?v=video1");
@@ -108,7 +108,7 @@ describe("norm.object (model factory)", () => {
         title: n.title(),
       });
 
-      const result = await Model.parsePage(lessons["lesson-1"]!) as { id: string };
+      const result = await Model.parsePage(lessons["lesson-1"]!);
       expect(result.id).toBe("lesson-1");
     });
   });
@@ -123,7 +123,7 @@ describe("norm.object (model factory)", () => {
         order: n.number({ property: "order" }),
       });
 
-      const result = await Model.retrieve("lesson-1") as { title: string; order: number } | null;
+      const result = await Model.retrieve("lesson-1");
 
       expect(mockClient.pages.retrieve).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -324,7 +324,7 @@ describe("norm.object (model factory)", () => {
         },
       };
 
-      const result = await Model.parsePage(page as never) as { options: [string, string] };
+      const result = await Model.parsePage(page as never);
       expect(result.options).toEqual(["A", "B"]);
     });
   });
