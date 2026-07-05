@@ -5,15 +5,10 @@ import type {
   QueryDataSourceParameters,
 } from "@notionhq/client/build/src/api-endpoints";
 import type { z, ZodType, ZodRawShape, ZodObject } from "zod";
-import type { NormConfig, RetrieveOptions, QueryOpts, QueryDatabaseResult, CreatePageInput, GetPageByIdOptions, NormAttachment } from "./types";
-import { retrieveFromPage, retrievePage, getSchemaShape } from "./retriever";
+import type { NormConfig, RetrieveOptions, QueryDatabaseResult, CreatePageInput, GetPageByIdOptions, NormAttachment } from "./types";
+import { retrieveFromPage, retrievePage, getSchemaShape, unwrapSchema } from "./retriever";
 import { notionRegistry } from "./registry";
 import { defineObject, type NormModel } from "./model";
-
-interface NormModelShape {
-  schema: ZodType;
-  propertyNames: readonly string[];
-}
 
 export class NormClient {
   private readonly client: Client;
@@ -199,14 +194,19 @@ export class NormClient {
     const shape = getSchemaShape(schema);
     const names: string[] = [];
     for (const [key, fieldSchema] of Object.entries(shape)) {
-      const brand = (fieldSchema as unknown as { _notion?: { extractor: string } })._notion;
-      const meta = notionRegistry.get(fieldSchema);
+      let brand = (fieldSchema as unknown as { _notion?: { extractor: string } })._notion;
+      let meta = notionRegistry.get(fieldSchema);
+      if (!brand && !meta) {
+        const inner = unwrapSchema(fieldSchema);
+        brand = (inner as unknown as { _notion?: { extractor: string } })._notion;
+        meta = notionRegistry.get(inner);
+      }
       if (!brand && !meta) continue;
       const extractor = brand?.extractor ?? meta?.extractor;
       if (!extractor) continue;
       if (extractor === "id" || extractor === "markdown" || extractor === "derived") continue;
       const property = meta?.notionProperty ?? key;
-      if (property === "__icon__") continue; // pageIcon is not a property
+      if (property === "__icon__") continue;
       names.push(property);
     }
     return names;

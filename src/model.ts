@@ -1,10 +1,9 @@
 import type { z, ZodType, ZodRawShape } from "zod";
-import { ZodObject, ZodPipe, ZodOptional, ZodNullable } from "zod";
+import { ZodObject, ZodPipe, ZodOptional, ZodNullable, ZodDefault, ZodTransform } from "zod";
 import type { NormClient } from "./client";
-import type { RetrieveOptions, QueryOpts, CreatableExtractor, SimplifiedInput } from "./types";
-import { CREATABLE_EXTRACTORS } from "./types";
+import type { RetrieveOptions, QueryOpts } from "./types";
 import { notionRegistry, type NotionFieldMeta } from "./registry";
-import { id as makeIdBuilder, type NotionBrand } from "./builders";
+import { id as makeIdBuilder } from "./builders";
 
 export interface NormModel<T, CreateProps, Args> {
   /** Marker for `n.getType` — holds the output type at the type level. */
@@ -28,37 +27,34 @@ import type { PageObjectResponse } from "@notionhq/client/build/src/api-endpoint
 
 // ─── helpers to extract brand metadata from a Zod schema ─────────────────────
 
+function unwrapOneLevel(schema: ZodType): ZodType | undefined {
+  if (schema instanceof ZodOptional) return schema.unwrap() as ZodType;
+  if (schema instanceof ZodNullable) return schema.unwrap() as ZodType;
+  if (schema instanceof ZodDefault) return schema.removeDefault() as ZodType;
+  if (schema instanceof ZodPipe) return schema.in as ZodType;
+  if (schema instanceof ZodTransform) return (schema as unknown as { in: ZodType }).in;
+  return undefined;
+}
+
 function getBrand(fieldSchema: ZodType): { extractor: string; property: string } | undefined {
-  return (fieldSchema as unknown as { _notion?: { extractor: string; property: string } })._notion;
+  let current: ZodType | undefined = fieldSchema;
+  while (current) {
+    const brand = (current as unknown as { _notion?: { extractor: string; property: string } })._notion;
+    if (brand) return brand;
+    current = unwrapOneLevel(current);
+  }
+  return undefined;
 }
 
-function unwrapSchema(schema: ZodType): ZodType {
-  if (schema instanceof ZodOptional) return unwrapSchema(schema.unwrap() as ZodType);
-  if (schema instanceof ZodNullable) return unwrapSchema(schema.unwrap() as ZodType);
-  if (schema instanceof ZodPipe) return unwrapSchema(schema.in as ZodType);
-  return schema;
+function getFieldMeta(fieldSchema: ZodType): NotionFieldMeta | undefined {
+  let current: ZodType | undefined = fieldSchema;
+  while (current) {
+    const meta = notionRegistry.get(current);
+    if (meta) return meta;
+    current = unwrapOneLevel(current);
+  }
+  return undefined;
 }
-
-function getSchemaShape(schema: ZodType): Record<string, ZodType> {
-  if (schema instanceof ZodObject) return schema.shape as Record<string, ZodType>;
-  if (schema instanceof ZodPipe) return getSchemaShape(schema.in as ZodType);
-  return {};
-}
-
-type CreatableKeyMap<Shape extends ZodRawShape> = {
-  [K in keyof Shape]: Shape[K] extends { _notion: { extractor: infer E; property: infer P } }
-    ? E extends CreatableExtractor
-      ? P extends string ? P : never
-      : never
-    : never
-};
-
-type CreatePropsFor<Shape extends ZodRawShape> = Partial<{
-  [K in keyof Shape as CreatableKeyMap<Shape>[K] extends never ? never : CreatableKeyMap<Shape>[K]]:
-    Shape[K] extends { _notion: { extractor: infer E } }
-      ? E extends CreatableExtractor ? SimplifiedInput<E> : never
-      : never
-}>;
 
 // ─── translate simplified input → Notion verbose property format ─────────────
 
@@ -79,18 +75,21 @@ function translateProperty(
       return { url: value === null ? null : String(value) };
     case "email":
       return { email: String(value) };
-    case "date":
+    case "date": {
       if (value === null) return { date: null };
       const dateStr = value instanceof Date ? value.toISOString() : String(value);
       return { date: { start: dateStr } };
+    }
     case "select":
       return { select: value === null ? null : { name: String(value) } };
-    case "multiSelect":
+    case "multiSelect": {
       const names = Array.isArray(value) ? value : [];
       return { multi_select: names.map((name) => ({ name: String(name) })) };
-    case "relationIds":
+    }
+    case "relationIds": {
       const ids = Array.isArray(value) ? value : [];
       return { relation: ids.map((id) => ({ id: String(id) })) };
+    }
     default:
       return undefined;
   }
@@ -171,12 +170,12 @@ function collectPropertyNames(shape: ZodRawShape): string[] {
   const names: string[] = [];
   for (const [key, fieldSchema] of Object.entries(shape)) {
     const brand = getBrand(fieldSchema as ZodType);
-    const meta = notionRegistry.get(fieldSchema as ZodType);
+    const meta = getFieldMeta(fieldSchema as ZodType);
     if (!brand && !meta) continue;
     const extractor = brand?.extractor ?? meta?.extractor;
     if (!extractor) continue;
     if (extractor === "id" || extractor === "markdown" || extractor === "derived") continue;
-    const property = meta?.notionProperty ?? key;
+    const property = meta?.notionProperty ?? brand?.property ?? key;
     if (property === "__icon__") continue;
     names.push(property);
   }
@@ -186,7 +185,7 @@ function collectPropertyNames(shape: ZodRawShape): string[] {
 function findExtractorByProperty(shape: ZodRawShape, propertyName: string): { extractor?: string } {
   for (const [, fieldSchema] of Object.entries(shape)) {
     const brand = getBrand(fieldSchema as ZodType);
-    const meta = notionRegistry.get(fieldSchema as ZodType);
+    const meta = getFieldMeta(fieldSchema as ZodType);
     const extractor = brand?.extractor ?? meta?.extractor;
     const property = meta?.notionProperty ?? brand?.property;
     if (property === propertyName && extractor) {

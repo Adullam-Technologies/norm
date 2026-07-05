@@ -103,7 +103,9 @@ export function select<P extends string>(opts: {
   if (enumValues && enumValues.length > 0) {
     const fb = fallback ?? enumValues[0];
     const base = z.enum(enumValues);
-    const transformed = base.transform((v: string) => v ?? fb);
+    // .nullable() so Notion's null select values pass parse,
+    // then .transform() replaces null with the fallback.
+    const transformed = base.nullable().transform((v: string | null) => v ?? fb);
     return brand(reg(transformed, property, "select"), "select", property);
   }
 
@@ -143,6 +145,7 @@ export function pageIcon(): Branded<"pageIcon", "__icon__", z.ZodNullable<z.ZodS
 
 // ─── derived ─────────────────────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function derived<T, Args = void>(key: string): z.ZodType<T> & NotionBrand<"derived", string> {
   const schema = z.custom<T>();
   notionRegistry.add(schema, { derived: true, derivedKey: key } as never);
