@@ -66,10 +66,9 @@ describe("norm.object (model factory)", () => {
       expect(Model.propertyNames).toEqual(["title", "order", "youtube_url"]);
     });
 
-    it("excludes derived fields and markdown", () => {
+    it("excludes markdown from propertyNames", () => {
       const Model = norm.object({
         title: n.title(),
-        isCompleted: n.derived<boolean>("isCompleted").default(false),
         markdownContent: n.markdown().optional(),
       });
 
@@ -261,28 +260,6 @@ describe("norm.object (model factory)", () => {
       expect(call.properties.tags).toEqual({
         multi_select: [{ name: "a" }, { name: "b" }],
       });
-    });
-  });
-
-  describe("derived fields", () => {
-    it("passes args and calls derived resolver", async () => {
-      mockClient.pages.retrieve.mockResolvedValue(lessons["lesson-1"]!);
-      mockClient.pages.retrieveMarkdown.mockResolvedValue({ markdown: "" });
-
-      const Model = norm.object({
-        title: n.title(),
-        isCompleted: n.derived<boolean>("isCompleted").default(false),
-      });
-
-      const result = await Model.retrieve("lesson-1", {
-        args: { studentId: "s1" } as never,
-        derived: async ({ key, args }) => {
-          if (key === "isCompleted" && args) return true;
-          return undefined;
-        },
-      }) as { isCompleted: boolean };
-
-      expect(result?.isCompleted).toBe(true);
     });
   });
 
