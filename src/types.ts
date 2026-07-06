@@ -13,15 +13,7 @@ export interface NormConfig {
   onError?: (err: Error, ctx: Record<string, unknown>) => void;
 }
 
-export type DerivedResolver<Args = unknown> = (ctx: {
-  key: string;
-  args?: Args;
-  page: PageObjectResponse;
-}) => Promise<unknown | undefined>;
-
 export interface RetrieveOptions<Args = unknown> {
-  args?: Args;
-  derived?: DerivedResolver<Args>;
   includeMarkdown?: boolean;
 }
 

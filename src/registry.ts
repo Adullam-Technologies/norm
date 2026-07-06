@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export type ExtractorType =
+  | "id"
   | "title"
   | "richText"
   | "number"
@@ -13,13 +14,12 @@ export type ExtractorType =
   | "relationIds"
   | "rollupText"
   | "rollupRelationIds"
-  | "pageIcon";
+  | "pageIcon"
+  | "markdown";
 
 export interface NotionFieldMeta {
   notionProperty?: string;
   extractor?: ExtractorType;
-  derived?: boolean;
-  derivedKey?: string;
   creatable?: boolean;
 }
 

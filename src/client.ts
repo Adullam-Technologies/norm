@@ -1,13 +1,14 @@
 import type { Client } from "@notionhq/client";
 import type {
   BlockObjectRequest,
+  CreatePageParameters,
+  GetPageParameters,
   PageObjectResponse,
   QueryDataSourceParameters,
 } from "@notionhq/client/build/src/api-endpoints";
 import type { z, ZodType, ZodRawShape, ZodObject } from "zod";
 import type { NormConfig, RetrieveOptions, QueryDatabaseResult, CreatePageInput, GetPageByIdOptions, NormAttachment } from "./types";
-import { retrieveFromPage, retrievePage, getSchemaShape, unwrapSchema } from "./retriever";
-import { notionRegistry } from "./registry";
+import { retrieveFromPage, retrievePage, getSchemaShape, getNotionMeta } from "./retriever";
 import { defineObject, type NormModel } from "./model";
 
 export class NormClient {
@@ -48,10 +49,11 @@ export class NormClient {
     opts?: GetPageByIdOptions,
   ): Promise<PageObjectResponse | null> {
     try {
-      const response = await this.client.pages.retrieve({
+      const params: GetPageParameters = {
         page_id: pageId,
         filter_properties: opts?.filterProperties,
-      } as never);
+      };
+      const response = await this.client.pages.retrieve(params);
       if (!response || !("properties" in response)) {
         this.onWarn?.("Page retrieved has no properties", { pageId });
         return null;
@@ -78,8 +80,8 @@ export class NormClient {
   async createPage(input: CreatePageInput): Promise<string | null> {
     try {
       const response = await this.client.pages.create({
-        parent: input.parent as never,
-        properties: input.properties as never,
+        parent: input.parent as CreatePageParameters["parent"],
+        properties: input.properties as CreatePageParameters["properties"],
         markdown: input.markdown,
       });
       return response.id;
@@ -188,24 +190,18 @@ export class NormClient {
 
   /**
    * Collect the Notion property names declared in a schema, excluding id,
-   * markdownContent, and derived fields. Used for auto filter_properties.
+   * markdownContent. Used for auto filter_properties.
    */
   collectPropertyNames(schema: ZodType): string[] {
     const shape = getSchemaShape(schema);
     const names: string[] = [];
     for (const [key, fieldSchema] of Object.entries(shape)) {
-      let brand = (fieldSchema as unknown as { _notion?: { extractor: string } })._notion;
-      let meta = notionRegistry.get(fieldSchema);
-      if (!brand && !meta) {
-        const inner = unwrapSchema(fieldSchema);
-        brand = (inner as unknown as { _notion?: { extractor: string } })._notion;
-        meta = notionRegistry.get(inner);
-      }
-      if (!brand && !meta) continue;
-      const extractor = brand?.extractor ?? meta?.extractor;
+      const meta = getNotionMeta(fieldSchema);
+      if (!meta) continue;
+      const extractor = meta.extractor;
       if (!extractor) continue;
-      if (extractor === "id" || extractor === "markdown" || extractor === "derived") continue;
-      const property = meta?.notionProperty ?? key;
+      if (extractor === "id" || extractor === "markdown") continue;
+      const property = meta.notionProperty ?? key;
       if (property === "__icon__") continue;
       names.push(property);
     }

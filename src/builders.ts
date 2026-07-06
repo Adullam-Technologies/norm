@@ -2,27 +2,15 @@ import { z } from "zod";
 import { notionRegistry, type ExtractorType } from "./registry";
 
 /**
- * Internal: brand a Zod schema with Notion metadata at the type level so
- * `norm.object` can compute `CreateProps` and `propertyNames`.
+ * Type-level utility: extracts the brand string from a Zod schema's output.
+ * In Zod v4, `.brand<T>()` adds `$brand<T>` to the output type (not the schema).
+ * This type lets consumers extract whether a Zod schema carries a Notion brand.
  *
- * The brand is purely a type-level marker; it has no runtime cost.
- * At runtime, `.register(notionRegistry, meta)` attaches the same metadata
- * to the registry so the retriever can look it up.
+ * @example
+ *   const title = n.title();
+ *   type T = z.output<typeof title>; // string & NotionBrand<"title", "title">
  */
-export interface NotionBrand<E extends string, P extends string = string> {
-  readonly _notion: { readonly extractor: E; readonly property: P };
-}
-
-type Branded<E extends string, P extends string, T> = T & NotionBrand<E, P>;
-
-function brand<E extends string, P extends string, T>(
-  schema: T,
-  extractor: E,
-  property: P,
-): Branded<E, P, T> {
-  (schema as unknown as { _notion: unknown })._notion = { extractor, property };
-  return schema as Branded<E, P, T>;
-}
+export type NotionBrand<E extends string, P extends string = string> = z.$brand<`${E}::${P}`>;
 
 function reg<T extends z.ZodType, P extends string>(
   schema: T,
@@ -31,64 +19,63 @@ function reg<T extends z.ZodType, P extends string>(
   extra: Record<string, unknown> = {},
 ): T {
   const meta = { notionProperty: property, extractor, ...extra };
-  // Use .add() on the registry directly, which has simpler typing.
-  notionRegistry.add(schema, meta as never);
+  notionRegistry.add(schema, meta);
   return schema;
 }
 
 // ─── id ──────────────────────────────────────────────────────────────────────
 
-export function id(): Branded<"id", "id", z.ZodString> {
-  return brand(z.string(), "id", "id");
+export function id() {
+  return reg(z.string(), "id", "id").brand<"id::id">();
 }
 
 // ─── title ───────────────────────────────────────────────────────────────────
 
-export function title<P extends string = "title">(opts?: { property?: P }): Branded<"title", P, z.ZodString> {
+export function title<P extends string = "title">(opts?: { property?: P }) {
   const property = (opts?.property ?? "title") as P;
-  return brand(reg(z.string(), property, "title"), "title", property);
+  return reg(z.string(), property, "title").brand<`title::${P}`>();
 }
 
 // ─── richText ────────────────────────────────────────────────────────────────
 
-export function richText<P extends string>(opts: { property: P }): Branded<"richText", P, z.ZodString> {
-  return brand(reg(z.string(), opts.property, "richText"), "richText", opts.property);
+export function richText<P extends string>(opts: { property: P }) {
+  return reg(z.string(), opts.property, "richText").brand<`richText::${P}`>();
 }
 
 // ─── number ──────────────────────────────────────────────────────────────────
 
-export function number<P extends string>(opts: { property: P }): Branded<"number", P, z.ZodNullable<z.ZodNumber>> {
-  return brand(reg(z.number().nullable(), opts.property, "number"), "number", opts.property);
+export function number<P extends string>(opts: { property: P }) {
+  return reg(z.number().nullable(), opts.property, "number").brand<`number::${P}`>();
 }
 
 // ─── checkbox ────────────────────────────────────────────────────────────────
 
-export function checkbox<P extends string>(opts: { property: P }): Branded<"checkbox", P, z.ZodBoolean> {
-  return brand(reg(z.boolean(), opts.property, "checkbox"), "checkbox", opts.property);
+export function checkbox<P extends string>(opts: { property: P }) {
+  return reg(z.boolean(), opts.property, "checkbox").brand<`checkbox::${P}`>();
 }
 
 // ─── url ─────────────────────────────────────────────────────────────────────
 
-export function url<P extends string>(opts: { property: P }): Branded<"url", P, z.ZodNullable<z.ZodString>> {
-  return brand(reg(z.string().nullable(), opts.property, "url"), "url", opts.property);
+export function url<P extends string>(opts: { property: P }) {
+  return reg(z.string().nullable(), opts.property, "url").brand<`url::${P}`>();
 }
 
 // ─── email ───────────────────────────────────────────────────────────────────
 
-export function email<P extends string>(opts: { property: P }): Branded<"email", P, z.ZodString> {
-  return brand(reg(z.string(), opts.property, "email"), "email", opts.property);
+export function email<P extends string>(opts: { property: P }) {
+  return reg(z.string(), opts.property, "email").brand<`email::${P}`>();
 }
 
 // ─── date ─────────────────────────────────────────────────────────────────────
 
-export function date<P extends string>(opts: { property: P }): Branded<"date", P, z.ZodNullable<z.ZodDate>> {
-  return brand(reg(z.date().nullable(), opts.property, "date"), "date", opts.property);
+export function date<P extends string>(opts: { property: P }) {
+  return reg(z.date().nullable(), opts.property, "date").brand<`date::${P}`>();
 }
 
 // ─── multiSelect ──────────────────────────────────────────────────────────────
 
-export function multiSelect<P extends string>(opts: { property: P }): Branded<"multiSelect", P, z.ZodArray<z.ZodString>> {
-  return brand(reg(z.array(z.string()), opts.property, "multiSelect"), "multiSelect", opts.property);
+export function multiSelect<P extends string>(opts: { property: P }) {
+  return reg(z.array(z.string()), opts.property, "multiSelect").brand<`multiSelect::${P}`>();
 }
 
 // ─── select ──────────────────────────────────────────────────────────────────
@@ -97,68 +84,53 @@ export function select<P extends string>(opts: {
   property: P;
   enum?: readonly [string, ...string[]];
   fallback?: string;
-}): Branded<"select", P, z.ZodType> {
+}) {
   const { property, enum: enumValues, fallback } = opts;
 
   if (enumValues && enumValues.length > 0) {
     const fb = fallback ?? enumValues[0];
     const base = z.enum(enumValues);
-    // .nullable() so Notion's null select values pass parse,
-    // then .transform() replaces null with the fallback.
     const transformed = base.nullable().transform((v: string | null) => v ?? fb);
-    return brand(reg(transformed, property, "select"), "select", property);
+    return reg(transformed, property, "select").brand<`select::${P}`>();
   }
 
-  return brand(reg(z.string().nullable(), property, "select"), "select", property);
+  return reg(z.string().nullable(), property, "select").brand<`select::${P}`>();
 }
 
 // ─── relation ────────────────────────────────────────────────────────────────
 
-type RelationReturn<P extends string, S extends boolean | undefined> =
-  S extends true ? Branded<"relationIds", P, z.ZodType<string, z.ZodType>>
-  : Branded<"relationIds", P, z.ZodType<string[], z.ZodType>>;
-
 export function relation<P extends string, S extends boolean | undefined = undefined>(
   opts: { property: P; single?: S },
-): RelationReturn<P, S> {
+) {
   const base = z.array(z.string());
   const schema = opts.single
     ? reg(base.transform((ids: string[]) => ids[0] ?? ""), opts.property, "relationIds")
     : reg(base, opts.property, "relationIds");
-  return brand(schema, "relationIds", opts.property) as unknown as RelationReturn<P, S>;
+  return schema.brand<`relationIds::${P}`>();
 }
 
 // ─── rollupText ──────────────────────────────────────────────────────────────
 
-export function rollupText<P extends string>(opts: { property: P }): Branded<"rollupText", P, z.ZodString> {
-  return brand(reg(z.string(), opts.property, "rollupText"), "rollupText", opts.property);
+export function rollupText<P extends string>(opts: { property: P }) {
+  return reg(z.string(), opts.property, "rollupText").brand<`rollupText::${P}`>();
 }
 
 // ─── rollupRelation ──────────────────────────────────────────────────────────
 
-export function rollupRelation<P extends string>(opts: { property: P }): Branded<"rollupRelationIds", P, z.ZodArray<z.ZodString>> {
-  return brand(reg(z.array(z.string()), opts.property, "rollupRelationIds"), "rollupRelationIds", opts.property);
+export function rollupRelation<P extends string>(opts: { property: P }) {
+  return reg(z.array(z.string()), opts.property, "rollupRelationIds").brand<`rollupRelationIds::${P}`>();
 }
 
 // ─── pageIcon ────────────────────────────────────────────────────────────────
 
-export function pageIcon(): Branded<"pageIcon", "__icon__", z.ZodNullable<z.ZodString>> {
-  return brand(reg(z.string().nullable(), "__icon__", "pageIcon"), "pageIcon", "__icon__");
-}
-
-// ─── derived ─────────────────────────────────────────────────────────────────
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function derived<T, Args = void>(key: string): z.ZodType<T> & NotionBrand<"derived", string> {
-  const schema = z.custom<T>();
-  notionRegistry.add(schema, { derived: true, derivedKey: key } as never);
-  return brand(schema, "derived", key) as z.ZodType<T> & NotionBrand<"derived", string>;
+export function pageIcon() {
+  return reg(z.string().nullable(), "__icon__", "pageIcon").brand<"pageIcon::__icon__">();
 }
 
 // ─── markdown ─────────────────────────────────────────────────────────────────
 
-export function markdown(): z.ZodOptional<z.ZodString> & NotionBrand<"markdown", "markdown"> {
-  return brand(z.string().optional(), "markdown", "markdown") as z.ZodOptional<z.ZodString> & NotionBrand<"markdown", "markdown">;
+export function markdown() {
+  return reg(z.string().optional(), "markdown", "markdown").brand<"markdown::markdown">();
 }
 
 // ─── n namespace ─────────────────────────────────────────────────────────────
@@ -178,7 +150,6 @@ export const n = {
   rollupText,
   rollupRelation,
   pageIcon,
-  derived,
   markdown,
 };
 

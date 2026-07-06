@@ -1,8 +1,8 @@
 import type { z, ZodType, ZodRawShape } from "zod";
-import { ZodObject, ZodPipe, ZodOptional, ZodNullable, ZodDefault, ZodTransform } from "zod";
+import { ZodObject } from "zod";
 import type { NormClient } from "./client";
 import type { RetrieveOptions, QueryOpts } from "./types";
-import { notionRegistry, type NotionFieldMeta } from "./registry";
+import { getNotionMeta } from "./retriever";
 import { id as makeIdBuilder } from "./builders";
 
 export interface NormModel<T, CreateProps, Args> {
@@ -10,7 +10,7 @@ export interface NormModel<T, CreateProps, Args> {
   readonly _normType: T;
   /** The underlying Zod schema. Rarely needed directly; prefer `.parse()`/`.retrieve()`. */
   readonly schema: ZodType<T>;
-  /** Notion property names declared in the schema (excludes id/markdown/derived/icon). */
+  /** Notion property names declared in the schema (excludes id/markdown/icon). */
   readonly propertyNames: readonly string[];
   parse(data: unknown): T;
   retrieve(pageId: string, opts?: RetrieveOptions<Args>): Promise<T | null>;
@@ -24,37 +24,6 @@ export interface NormModel<T, CreateProps, Args> {
 }
 
 import type { PageObjectResponse } from "@notionhq/client/build/src/api-endpoints";
-
-// ─── helpers to extract brand metadata from a Zod schema ─────────────────────
-
-function unwrapOneLevel(schema: ZodType): ZodType | undefined {
-  if (schema instanceof ZodOptional) return schema.unwrap() as ZodType;
-  if (schema instanceof ZodNullable) return schema.unwrap() as ZodType;
-  if (schema instanceof ZodDefault) return schema.removeDefault() as ZodType;
-  if (schema instanceof ZodPipe) return schema.in as ZodType;
-  if (schema instanceof ZodTransform) return (schema as unknown as { in: ZodType }).in;
-  return undefined;
-}
-
-function getBrand(fieldSchema: ZodType): { extractor: string; property: string } | undefined {
-  let current: ZodType | undefined = fieldSchema;
-  while (current) {
-    const brand = (current as unknown as { _notion?: { extractor: string; property: string } })._notion;
-    if (brand) return brand;
-    current = unwrapOneLevel(current);
-  }
-  return undefined;
-}
-
-function getFieldMeta(fieldSchema: ZodType): NotionFieldMeta | undefined {
-  let current: ZodType | undefined = fieldSchema;
-  while (current) {
-    const meta = notionRegistry.get(current);
-    if (meta) return meta;
-    current = unwrapOneLevel(current);
-  }
-  return undefined;
-}
 
 // ─── translate simplified input → Notion verbose property format ─────────────
 
@@ -169,13 +138,12 @@ function makeIdField(): ZodType {
 function collectPropertyNames(shape: ZodRawShape): string[] {
   const names: string[] = [];
   for (const [key, fieldSchema] of Object.entries(shape)) {
-    const brand = getBrand(fieldSchema as ZodType);
-    const meta = getFieldMeta(fieldSchema as ZodType);
-    if (!brand && !meta) continue;
-    const extractor = brand?.extractor ?? meta?.extractor;
+    const meta = getNotionMeta(fieldSchema as ZodType);
+    if (!meta) continue;
+    const extractor = meta.extractor;
     if (!extractor) continue;
-    if (extractor === "id" || extractor === "markdown" || extractor === "derived") continue;
-    const property = meta?.notionProperty ?? brand?.property ?? key;
+    if (extractor === "id" || extractor === "markdown") continue;
+    const property = meta.notionProperty ?? key;
     if (property === "__icon__") continue;
     names.push(property);
   }
@@ -184,10 +152,10 @@ function collectPropertyNames(shape: ZodRawShape): string[] {
 
 function findExtractorByProperty(shape: ZodRawShape, propertyName: string): { extractor?: string } {
   for (const [, fieldSchema] of Object.entries(shape)) {
-    const brand = getBrand(fieldSchema as ZodType);
-    const meta = getFieldMeta(fieldSchema as ZodType);
-    const extractor = brand?.extractor ?? meta?.extractor;
-    const property = meta?.notionProperty ?? brand?.property;
+    const meta = getNotionMeta(fieldSchema as ZodType);
+    if (!meta) continue;
+    const extractor = meta.extractor;
+    const property = meta.notionProperty;
     if (property === propertyName && extractor) {
       return { extractor };
     }
