@@ -27,10 +27,7 @@ import type { PageObjectResponse } from "@notionhq/client/build/src/api-endpoint
 
 // ─── translate simplified input → Notion verbose property format ─────────────
 
-function translateProperty(
-  extractor: string,
-  value: unknown,
-): unknown {
+function translateProperty(extractor: string, value: unknown): unknown {
   switch (extractor) {
     case "title":
       return { title: [{ text: { content: String(value) } }] };
@@ -46,7 +43,8 @@ function translateProperty(
       return { email: String(value) };
     case "date": {
       if (value === null) return { date: null };
-      const dateStr = value instanceof Date ? value.toISOString() : String(value);
+      const dateStr =
+        value instanceof Date ? value.toISOString() : String(value);
       return { date: { start: dateStr } };
     }
     case "select":
@@ -74,12 +72,15 @@ export function defineObject<TShape extends ZodRawShape, TArgs = void>(
   },
 ): NormModel<unknown, unknown, TArgs> {
   // Auto-inject id: n.id() if not present
-  const finalShape: ZodRawShape = "id" in shape ? shape : { id: makeIdField(), ...shape };
+  const finalShape: ZodRawShape =
+    "id" in shape ? shape : { id: makeIdField(), ...shape };
 
-  const baseSchema = new ZodObject({ shape: finalShape } as never) as unknown as ZodObject<TShape>;
+  const baseSchema = new ZodObject({
+    shape: finalShape,
+  } as never) as unknown as ZodObject<TShape>;
   const schema = opts?.transform
-    ? baseSchema.transform(opts.transform as never) as ZodType
-    : baseSchema as ZodType;
+    ? (baseSchema.transform(opts.transform as never) as ZodType)
+    : (baseSchema as ZodType);
 
   // Collect property names for filter_properties
   const propertyNames = collectPropertyNames(finalShape);
@@ -92,10 +93,19 @@ export function defineObject<TShape extends ZodRawShape, TArgs = void>(
       return (schema as ZodType<unknown>).parse(data);
     },
     async retrieve(pageId, retrieveOpts) {
-      return client.retrievePage(pageId, schema as ZodType<unknown>, retrieveOpts as RetrieveOptions, propertyNames);
+      return client.retrievePage(
+        pageId,
+        schema as ZodType<unknown>,
+        retrieveOpts as RetrieveOptions,
+        propertyNames,
+      );
     },
     async parsePage(page, parseOpts) {
-      return client.retrieveFromPage(page, schema as ZodType<unknown>, parseOpts as RetrieveOptions);
+      return client.retrieveFromPage(
+        page,
+        schema as ZodType<unknown>,
+        parseOpts as RetrieveOptions,
+      );
     },
     async create(input) {
       const translated: Record<string, unknown> = {};
@@ -120,7 +130,11 @@ export function defineObject<TShape extends ZodRawShape, TArgs = void>(
       });
       return Promise.all(
         results.map((page) =>
-          client.retrieveFromPage(page, schema as ZodType<unknown>, queryOpts as RetrieveOptions)
+          client.retrieveFromPage(
+            page,
+            schema as ZodType<unknown>,
+            queryOpts as RetrieveOptions,
+          ),
         ),
       );
     },
@@ -150,7 +164,10 @@ function collectPropertyNames(shape: ZodRawShape): string[] {
   return names;
 }
 
-function findExtractorByProperty(shape: ZodRawShape, propertyName: string): { extractor?: string } {
+function findExtractorByProperty(
+  shape: ZodRawShape,
+  propertyName: string,
+): { extractor?: string } {
   for (const [, fieldSchema] of Object.entries(shape)) {
     const meta = getNotionMeta(fieldSchema as ZodType);
     if (!meta) continue;

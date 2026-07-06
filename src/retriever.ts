@@ -29,7 +29,8 @@ import type { RetrieveOptions } from "./types";
 
 const EXTRACTOR_MAP: Record<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  string, (page: PageObjectResponse, property: string) => any
+  string,
+  (page: PageObjectResponse, property: string) => any
 > = {
   title: getTitle,
   richText: getRichText,
@@ -51,7 +52,9 @@ const EXTRACTOR_MAP: Record<
  * to find the inner schema that carries registry metadata. Returns the first
  * schema that has metadata, or the innermost one if none found.
  */
-export function getNotionMeta(fieldSchema: ZodType): NotionFieldMeta | undefined {
+export function getNotionMeta(
+  fieldSchema: ZodType,
+): NotionFieldMeta | undefined {
   let current: ZodType | undefined = fieldSchema;
   while (current) {
     const meta = notionRegistry.get(current);
@@ -67,7 +70,8 @@ export function unwrapOneLevel(schema: ZodType): ZodType | undefined {
   if (schema instanceof ZodNullable) return schema.unwrap() as ZodType;
   if (schema instanceof ZodDefault) return schema.removeDefault() as ZodType;
   if (schema instanceof ZodPipe) return schema.in as ZodType;
-  if (schema instanceof ZodTransform) return (schema as unknown as { in: ZodType }).in;
+  if (schema instanceof ZodTransform)
+    return (schema as unknown as { in: ZodType }).in;
   return undefined;
 }
 
@@ -139,7 +143,10 @@ export async function retrieveFromPage<T extends ZodType>(
 export async function retrievePage<T extends ZodType>(
   pageId: string,
   schema: T,
-  getPageById: (pageId: string, opts?: { filterProperties?: string[] }) => Promise<PageObjectResponse | null>,
+  getPageById: (
+    pageId: string,
+    opts?: { filterProperties?: string[] },
+  ) => Promise<PageObjectResponse | null>,
   getPageMarkdown: (pageId: string) => Promise<string>,
   options?: RetrieveOptions,
   propertyNames?: readonly string[],

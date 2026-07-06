@@ -7,8 +7,20 @@ import type {
   QueryDataSourceParameters,
 } from "@notionhq/client/build/src/api-endpoints";
 import type { z, ZodType, ZodRawShape, ZodObject } from "zod";
-import type { NormConfig, RetrieveOptions, QueryDatabaseResult, CreatePageInput, GetPageByIdOptions, NormAttachment } from "./types";
-import { retrieveFromPage, retrievePage, getSchemaShape, getNotionMeta } from "./retriever";
+import type {
+  NormConfig,
+  RetrieveOptions,
+  QueryDatabaseResult,
+  CreatePageInput,
+  GetPageByIdOptions,
+  NormAttachment,
+} from "./types";
+import {
+  retrieveFromPage,
+  retrievePage,
+  getSchemaShape,
+  getNotionMeta,
+} from "./retriever";
 import { defineObject, type NormModel } from "./model";
 
 export class NormClient {
@@ -104,7 +116,9 @@ export class NormClient {
       });
 
       if (!createResponse.id) {
-        this.onWarn?.("File upload creation returned no id", { filename: file.filename });
+        this.onWarn?.("File upload creation returned no id", {
+          filename: file.filename,
+        });
         return null;
       }
 
@@ -112,7 +126,9 @@ export class NormClient {
         file_upload_id: createResponse.id,
         file: {
           filename: file.filename,
-          data: new Blob([new Uint8Array(file.data)], { type: file.contentType }),
+          data: new Blob([new Uint8Array(file.data)], {
+            type: file.contentType,
+          }),
         },
       });
 
@@ -215,11 +231,15 @@ export class NormClient {
   object<TShape extends ZodRawShape, TTransform = never, TArgs = void>(
     shape: TShape,
     opts?: {
-      transform?: (data: z.infer<ZodObject<{ id: z.ZodString } & TShape>>) => TTransform;
+      transform?: (
+        data: z.infer<ZodObject<{ id: z.ZodString } & TShape>>,
+      ) => TTransform;
       argsType?: TArgs;
     },
   ): NormModel<
-    [TTransform] extends [never] ? z.infer<ZodObject<{ id: z.ZodString } & TShape>> : TTransform,
+    [TTransform] extends [never]
+      ? z.infer<ZodObject<{ id: z.ZodString } & TShape>>
+      : TTransform,
     unknown,
     TArgs
   > {

@@ -46,14 +46,22 @@ export interface NormAttachment {
  * Simplified input value per extractor type for `Model.create`.
  * Users supply these; the library translates to Notion's verbose format.
  */
-export type SimplifiedInput<E extends ExtractorType> =
-  E extends "title" | "richText" | "email" ? string
-  : E extends "number" | "url" ? string | number | null
-  : E extends "checkbox" ? boolean
-  : E extends "date" ? Date | string | null
-  : E extends "select" ? string
-  : E extends "multiSelect" | "relationIds" ? string[]
-  : never;
+export type SimplifiedInput<E extends ExtractorType> = E extends
+  | "title"
+  | "richText"
+  | "email"
+  ? string
+  : E extends "number" | "url"
+    ? string | number | null
+    : E extends "checkbox"
+      ? boolean
+      : E extends "date"
+        ? Date | string | null
+        : E extends "select"
+          ? string
+          : E extends "multiSelect" | "relationIds"
+            ? string[]
+            : never;
 
 /** Extractors that can be used when creating a page. */
 export type CreatableExtractor =

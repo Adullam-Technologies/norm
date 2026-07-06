@@ -13,8 +13,13 @@ describe("retriever", () => {
       youtubeUrl: n.url({ property: "youtube_url" }),
       weekId: n.relation({ property: "week", single: true }),
       weekTitle: n.rollupText({ property: "week_title" }),
-      estimatedMinutes: n.number({ property: "estimated_minutes" }).transform((v: number | null) => v ?? 5),
-      codeEnv: n.select({ property: "code_env", enum: ["no_code", "test_runner", "ai_code_analysis", "submission"] }),
+      estimatedMinutes: n
+        .number({ property: "estimated_minutes" })
+        .transform((v: number | null) => v ?? 5),
+      codeEnv: n.select({
+        property: "code_env",
+        enum: ["no_code", "test_runner", "ai_code_analysis", "submission"],
+      }),
       published: n.checkbox({ property: "published" }),
     });
 
@@ -110,20 +115,30 @@ describe("retriever", () => {
 
     it("fetches markdown when includeMarkdown=true", async () => {
       const page = lessons["lesson-1"]!;
-      const result = await retrieveFromPage(page, schema, {
-        includeMarkdown: true,
-      }, {
-        getPageMarkdown: async () => "# Hello World",
-      });
+      const result = await retrieveFromPage(
+        page,
+        schema,
+        {
+          includeMarkdown: true,
+        },
+        {
+          getPageMarkdown: async () => "# Hello World",
+        },
+      );
 
       expect(result.markdownContent).toBe("# Hello World");
     });
 
     it("does not fetch markdown when includeMarkdown not set", async () => {
       const page = lessons["lesson-1"]!;
-      const result = await retrieveFromPage(page, schema, {}, {
-        getPageMarkdown: async () => "should not be called",
-      });
+      const result = await retrieveFromPage(
+        page,
+        schema,
+        {},
+        {
+          getPageMarkdown: async () => "should not be called",
+        },
+      );
 
       expect(result.markdownContent).toBeUndefined();
     });

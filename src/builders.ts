@@ -10,7 +10,10 @@ import { notionRegistry, type ExtractorType } from "./registry";
  *   const title = n.title();
  *   type T = z.output<typeof title>; // string & NotionBrand<"title", "title">
  */
-export type NotionBrand<E extends string, P extends string = string> = z.$brand<`${E}::${P}`>;
+export type NotionBrand<
+  E extends string,
+  P extends string = string,
+> = z.$brand<`${E}::${P}`>;
 
 function reg<T extends z.ZodType, P extends string>(
   schema: T,
@@ -45,7 +48,11 @@ export function richText<P extends string>(opts: { property: P }) {
 // ─── number ──────────────────────────────────────────────────────────────────
 
 export function number<P extends string>(opts: { property: P }) {
-  return reg(z.number().nullable(), opts.property, "number").brand<`number::${P}`>();
+  return reg(
+    z.number().nullable(),
+    opts.property,
+    "number",
+  ).brand<`number::${P}`>();
 }
 
 // ─── checkbox ────────────────────────────────────────────────────────────────
@@ -75,7 +82,11 @@ export function date<P extends string>(opts: { property: P }) {
 // ─── multiSelect ──────────────────────────────────────────────────────────────
 
 export function multiSelect<P extends string>(opts: { property: P }) {
-  return reg(z.array(z.string()), opts.property, "multiSelect").brand<`multiSelect::${P}`>();
+  return reg(
+    z.array(z.string()),
+    opts.property,
+    "multiSelect",
+  ).brand<`multiSelect::${P}`>();
 }
 
 // ─── select ──────────────────────────────────────────────────────────────────
@@ -90,7 +101,9 @@ export function select<P extends string>(opts: {
   if (enumValues && enumValues.length > 0) {
     const fb = fallback ?? enumValues[0];
     const base = z.enum(enumValues);
-    const transformed = base.nullable().transform((v: string | null) => v ?? fb);
+    const transformed = base
+      .nullable()
+      .transform((v: string | null) => v ?? fb);
     return reg(transformed, property, "select").brand<`select::${P}`>();
   }
 
@@ -99,12 +112,17 @@ export function select<P extends string>(opts: {
 
 // ─── relation ────────────────────────────────────────────────────────────────
 
-export function relation<P extends string, S extends boolean | undefined = undefined>(
-  opts: { property: P; single?: S },
-) {
+export function relation<
+  P extends string,
+  S extends boolean | undefined = undefined,
+>(opts: { property: P; single?: S }) {
   const base = z.array(z.string());
   const schema = opts.single
-    ? reg(base.transform((ids: string[]) => ids[0] ?? ""), opts.property, "relationIds")
+    ? reg(
+        base.transform((ids: string[]) => ids[0] ?? ""),
+        opts.property,
+        "relationIds",
+      )
     : reg(base, opts.property, "relationIds");
   return schema.brand<`relationIds::${P}`>();
 }
@@ -112,25 +130,41 @@ export function relation<P extends string, S extends boolean | undefined = undef
 // ─── rollupText ──────────────────────────────────────────────────────────────
 
 export function rollupText<P extends string>(opts: { property: P }) {
-  return reg(z.string(), opts.property, "rollupText").brand<`rollupText::${P}`>();
+  return reg(
+    z.string(),
+    opts.property,
+    "rollupText",
+  ).brand<`rollupText::${P}`>();
 }
 
 // ─── rollupRelation ──────────────────────────────────────────────────────────
 
 export function rollupRelation<P extends string>(opts: { property: P }) {
-  return reg(z.array(z.string()), opts.property, "rollupRelationIds").brand<`rollupRelationIds::${P}`>();
+  return reg(
+    z.array(z.string()),
+    opts.property,
+    "rollupRelationIds",
+  ).brand<`rollupRelationIds::${P}`>();
 }
 
 // ─── pageIcon ────────────────────────────────────────────────────────────────
 
 export function pageIcon() {
-  return reg(z.string().nullable(), "__icon__", "pageIcon").brand<"pageIcon::__icon__">();
+  return reg(
+    z.string().nullable(),
+    "__icon__",
+    "pageIcon",
+  ).brand<"pageIcon::__icon__">();
 }
 
 // ─── markdown ─────────────────────────────────────────────────────────────────
 
 export function markdown() {
-  return reg(z.string().optional(), "markdown", "markdown").brand<"markdown::markdown">();
+  return reg(
+    z.string().optional(),
+    "markdown",
+    "markdown",
+  ).brand<"markdown::markdown">();
 }
 
 // ─── n namespace ─────────────────────────────────────────────────────────────

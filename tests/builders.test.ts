@@ -115,7 +115,11 @@ describe("builders", () => {
     });
 
     it("with enum: explicit fallback overrides default", () => {
-      const schema = n.select({ property: "env", enum: ["a", "b", "c"], fallback: "b" });
+      const schema = n.select({
+        property: "env",
+        enum: ["a", "b", "c"],
+        fallback: "b",
+      });
       expect(schema.parse(null)).toBe("b");
     });
 

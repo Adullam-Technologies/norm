@@ -154,10 +154,10 @@ describe("norm.object (model factory)", () => {
         order: n.number({ property: "order" }),
       });
 
-      const results = await Model.query("ds_lessons", {
+      const results = (await Model.query("ds_lessons", {
         filter: { property: "published", checkbox: { equals: true } },
         sorts: [{ property: "order", direction: "ascending" }],
-      }) as Array<{ title: string }>;
+      })) as Array<{ title: string }>;
 
       expect(mockClient.dataSources.query).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -203,13 +203,17 @@ describe("norm.object (model factory)", () => {
       expect(result).toBe("new-page-1");
 
       // Verify the properties were translated
-      const call = mockClient.pages.create.mock.calls[0]![0] as { properties: Record<string, unknown> };
+      const call = mockClient.pages.create.mock.calls[0]![0] as {
+        properties: Record<string, unknown>;
+      };
       expect(call.properties.title).toEqual({
         title: [{ text: { content: "New Lesson" } }],
       });
       expect(call.properties.order).toEqual({ number: 10 });
       expect(call.properties.published).toEqual({ checkbox: true });
-      expect(call.properties.youtube_url).toEqual({ url: "https://youtube.com/watch?v=abc" });
+      expect(call.properties.youtube_url).toEqual({
+        url: "https://youtube.com/watch?v=abc",
+      });
     });
 
     it("handles null values", async () => {
@@ -230,7 +234,9 @@ describe("norm.object (model factory)", () => {
         },
       });
 
-      const call = mockClient.pages.create.mock.calls[0]![0] as { properties: Record<string, unknown> };
+      const call = mockClient.pages.create.mock.calls[0]![0] as {
+        properties: Record<string, unknown>;
+      };
       expect(call.properties.order).toEqual({ number: null });
       expect(call.properties.youtube_url).toEqual({ url: null });
     });
@@ -253,7 +259,9 @@ describe("norm.object (model factory)", () => {
         },
       });
 
-      const call = mockClient.pages.create.mock.calls[0]![0] as { properties: Record<string, unknown> };
+      const call = mockClient.pages.create.mock.calls[0]![0] as {
+        properties: Record<string, unknown>;
+      };
       expect(call.properties.week).toEqual({
         relation: [{ id: "week-1" }, { id: "week-2" }],
       });
@@ -296,8 +304,30 @@ describe("norm.object (model factory)", () => {
       const page = {
         ...cohorts["cohort-1"]!,
         properties: {
-          option_1: { type: "rich_text", rich_text: [{ plain_text: "A", text: { content: "A", link: null }, type: "text", href: null, annotations: {} }] },
-          option_2: { type: "rich_text", rich_text: [{ plain_text: "B", text: { content: "B", link: null }, type: "text", href: null, annotations: {} }] },
+          option_1: {
+            type: "rich_text",
+            rich_text: [
+              {
+                plain_text: "A",
+                text: { content: "A", link: null },
+                type: "text",
+                href: null,
+                annotations: {},
+              },
+            ],
+          },
+          option_2: {
+            type: "rich_text",
+            rich_text: [
+              {
+                plain_text: "B",
+                text: { content: "B", link: null },
+                type: "text",
+                href: null,
+                annotations: {},
+              },
+            ],
+          },
         },
       };
 
