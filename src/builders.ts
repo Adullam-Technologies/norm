@@ -115,7 +115,11 @@ export function select<P extends string>(opts: {
 export function relation<
   P extends string,
   S extends boolean | undefined = undefined,
->(opts: { property: P; single?: S }) {
+>(
+  opts: { property: P; single?: S },
+): S extends true
+  ? z.ZodType<string & NotionBrand<"relationIds", P>>
+  : z.ZodType<(string & NotionBrand<"relationIds", P>)[]> {
   const base = z.array(z.string());
   const schema = opts.single
     ? reg(
@@ -124,7 +128,7 @@ export function relation<
         "relationIds",
       )
     : reg(base, opts.property, "relationIds");
-  return schema.brand<`relationIds::${P}`>();
+  return schema.brand<`relationIds::${P}`>() as never;
 }
 
 // ─── rollupText ──────────────────────────────────────────────────────────────
