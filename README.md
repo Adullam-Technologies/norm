@@ -32,7 +32,6 @@ console.log(product.title, product.status, product.price);
 2. **Get type safety** — both for reading and creating pages. Typos in property names? Wrong value types? Compile errors
 3. **Forget the Notion format** — the library extracts values on read, translates simplified values on write
 4. **Save bandwidth** — only requested properties are returned from the API (`filter_properties` is automatic)
-5. **Add computed fields** — `n.derived()` for values that come from your business logic, not Notion
 
 ---
 
@@ -106,17 +105,19 @@ const status = n.select({
 
 Without `enum`, the type is `string | null` and no fallback is applied.
 
-### `n.relation` — single vs array
+### `n.singleRelation` / `n.multiRelation` — single vs array
 
 ```ts
 // Single relation — returns the first ID as a string, or ""
-const categoryId = n.relation({ property: "Category", single: true });
+const categoryId = n.singleRelation({ property: "Category" });
 // Type: string
 
 // Multi relation — returns an array of IDs
-const tagIds = n.relation({ property: "Tags" });
+const tagIds = n.multiRelation({ property: "Tags" });
 // Type: string[]
 ```
+
+> `n.relation(...)` is an alias for `n.singleRelation(...)`.
 
 ### `n.select` with rollups
 
@@ -222,57 +223,7 @@ const pageId = await Product.create({
 | Multi-select | `string[]` |
 | Relation | `string[]` |
 
-norm translates these to Notion's verbose format internally. **Typos in property names or wrong value types are compile errors.** Rollup, derived, id, and markdown fields are automatically excluded from the create input — you can't accidentally try to write to a computed field.
-
----
-
-## Computed fields with `n.derived`
-
-Not every field lives in Notion. Sometimes you need to enrich a page with data from your own database, an external API, or business logic. That's what `n.derived` is for.
-
-```ts
-export const Order = norm.object({
-  title: n.title(),
-  total: n.number({ property: "Total" }),
-  status: n.select({ property: "Status", enum: ["pending", "paid", "shipped", "cancelled"] }),
-  isOverdue: n.derived<boolean>("isOverdue").default(false),
-  daysSinceOrder: n.derived<number | undefined>("daysSinceOrder").optional(),
-  // With args typed per-field:
-  customerTier: n.derived<string, { customerId: string }>("customerTier").default("standard"),
-});
-
-type OrderModel = n.getType<typeof Order>;
-```
-
-Then resolve them when retrieving:
-
-```ts
-const order = await Order.retrieve(orderId, {
-  args: { customerId: "cus_123" },
-  derived: async ({ key, args, page }) => {
-    if (key === "isOverdue") return checkIfOverdue(page.id);
-    if (key === "daysSinceOrder") return calculateDaysSince(page.id);
-    if (key === "customerTier" && args) return getTier(args.customerId);
-    return undefined; // fall back to .default() / .optional()
-  },
-});
-```
-
-**How it works:**
-- The `derived` resolver is called once per `n.derived` field
-- `args` flows from the call site to the resolver (typed via the generic parameter)
-- `undefined` return → field falls back to its schema `.default()` or `.optional()`
-- The `key` lets you dispatch with a `switch` / `if` chain
-
-You can also query with derived fields:
-
-```ts
-const orders = await Order.query(databaseId, {
-  filter: { property: "Status", select: { equals: "paid" } },
-  args: { customerId: "cus_123" },
-  derived: async ({ key, args, page }) => { /* ... */ },
-});
-```
+norm translates these to Notion's verbose format internally. **Typos in property names or wrong value types are compile errors.** Rollup, id, and markdown fields are automatically excluded from the create input — you can't accidentally try to write to a computed field.
 
 ---
 
@@ -369,11 +320,12 @@ All return Zod schemas registered with `notionRegistry`, branded at the type lev
 | `n.date({ property })` | `z.date().nullable()` | Yes | `Date \| string \| null` |
 | `n.multiSelect({ property })` | `z.array(z.string())` | Yes | `string[]` |
 | `n.select({ property, enum?, fallback? })` | `z.enum([...])` or `z.string().nullable()` | Yes | `string` or `string \| null` |
-| `n.relation({ property, single? })` | `z.array(z.string()).transform(...)` | Yes | `string[]` |
+| `n.relation({ property })` | `z.array(z.string()).transform(...)` | Yes | `string` |
+| `n.singleRelation({ property })` | `z.array(z.string()).transform(...)` | Yes | `string` |
+| `n.multiRelation({ property })` | `z.array(z.string())` | Yes | `string[]` |
 | `n.rollupText({ property })` | `z.string()` | No | — |
 | `n.rollupRelation({ property })` | `z.array(z.string())` | No | — |
 | `n.pageIcon()` | `z.string().nullable()` | No | — |
-| `n.derived<T, Args = void>(key)` | `z.custom<T>()` | No | — |
 | `n.markdown()` | `z.string().optional()` | No | — |
 
 ### `NormClient`
@@ -435,13 +387,13 @@ interface NormConfig {
 }
 ```
 
-### `NormModel<T, CreateProps, Args>`
+### `NormModel<T, CreateProps>`
 
 ```ts
-interface NormModel<T, CreateProps, Args> {
+interface NormModel<T, CreateProps> {
   /** The underlying Zod schema. */
   readonly schema: ZodType<T>;
-  /** Notion property names (excludes id/markdown/derived). Used for filter_properties. */
+  /** Notion property names (excludes id/markdown). Used for filter_properties. */
   readonly propertyNames: readonly string[];
 
   /** Parse arbitrary data through the schema. */
@@ -490,7 +442,7 @@ norm automatically requests only the properties declared in the schema:
 1. **`Model.retrieve(pageId)`** — calls `getPageById` with `filterProperties: Model.propertyNames`
 2. **`Model.query(databaseId)`** — calls `queryDatabase` with `filterProperties: Model.propertyNames`
 
-`Model.propertyNames` excludes `id` (always returned by Notion), `markdownContent` (fetched separately), and derived fields (not Notion properties).
+`Model.propertyNames` excludes `id` (always returned by Notion) and `markdownContent` (fetched separately).
 
 Filters still work on any property — Notion's `filter` (which pages match) is independent of `filter_properties` (which values are returned). You can filter on properties NOT in the schema (e.g. `published: true`); the filter runs server-side, the property just isn't returned per-page.
 
@@ -530,7 +482,7 @@ const posts = await BlogPost.query("ds_blog", {
 });
 ```
 
-### Task tracker with computed urgency
+### Task tracker
 
 ```ts
 export const Task = norm.object({
@@ -540,22 +492,11 @@ export const Task = norm.object({
     property: "Priority",
     enum: ["low", "medium", "high", "critical"],
   }),
-  assignee: n.relation({ property: "Assignee", single: true }),
+  assignee: n.singleRelation({ property: "Assignee" }),
   status: n.select({
     property: "Status",
     enum: ["todo", "in_progress", "done"],
   }).default("todo"),
-  isUrgent: n.derived<boolean>("isUrgent").default(false),
-});
-
-// Task.retrieve with derived urgency
-const task = await Task.retrieve(taskId, {
-  derived: async ({ key, page }) => {
-    if (key === "isUrgent") {
-      return checkUrgency(page.id);
-    }
-    return undefined;
-  },
 });
 ```
 
@@ -579,34 +520,12 @@ export const Product = norm.object({
 
 ---
 
-## Design principles
-
-1. **Framework-agnostic** — No Next.js, no Sentry, no environment assumptions. Bring your own `@notionhq/client`. Use it with any framework or none.
-2. **Schema definition is pure** — `n.*` builders only register metadata in a global registry. No client needed to define a model; models can be exported from shared packages.
-3. **Data access is bound** — `norm.object(...)` binds the schema to a `NormClient` instance. `Model.retrieve()` / `.create()` / `.query()` work without re-passing the client.
-4. **Business logic stays in the host** — `norm` knows nothing about your domain. Computed values live in the `derived` resolver you supply. The library handles Notion; you handle your app.
-5. **Type safety end-to-end** — Output types via `n.getType<typeof Model>`, create input types enforce property names and value types, derived field args flow from call site to resolver. Typos are compile errors.
-6. **Auto-optimization** — `filter_properties` is injected automatically from the schema's property names. Notion responses are as slim as possible, zero config.
-7. **OOP client** — Instantiate `NormClient` once with config, export it, all callers reuse it. No per-call configuration.
-
----
-
-## Development
-
-```bash
-pnpm install
-pnpm test        # Vitest
-pnpm build       # tsdown → dist/
-pnpm lint        # ESLint flat config
-```
-
-- **Build**: `tsdown` (ESM + DTS, zero-config)
-- **Test**: Vitest with Notion ground-truth fixtures
-- **Node**: `>=24`
-- **Peer deps**: `zod@^4`, `@notionhq/client@^5`
-
----
-
 ## License
 
-See `LICENSE`.
+MIT © [Adullam Technologies](https://adullamtech.com)
+
+---
+
+## Contributing
+
+Contributions are welcome! Please open an [issue](https://github.com/Adullam-Technologies/norm/issues) or submit a PR.
