@@ -9,21 +9,27 @@ describe("builders", () => {
       expect(schema.parse("abc")).toBe("abc");
     });
 
-    it("brands with extractor=id, property=id", () => {
-      const schema = n.id() as unknown as { _notion: unknown };
-      expect(schema._notion).toEqual({ extractor: "id", property: "id" });
+    it("registers id metadata in notionRegistry", () => {
+      const schema = n.id();
+      const meta = notionRegistry.get(schema);
+      expect(meta?.extractor).toBe("id");
+      expect(meta?.notionProperty).toBe("id");
     });
   });
 
   describe("n.title", () => {
     it("defaults property to 'title'", () => {
-      const schema = n.title() as unknown as { _notion: unknown };
-      expect(schema._notion).toEqual({ extractor: "title", property: "title" });
+      const schema = n.title();
+      const meta = notionRegistry.get(schema);
+      expect(meta?.extractor).toBe("title");
+      expect(meta?.notionProperty).toBe("title");
     });
 
     it("accepts a custom property name", () => {
-      const schema = n.title({ property: "Name" }) as unknown as { _notion: unknown };
-      expect(schema._notion).toEqual({ extractor: "title", property: "Name" });
+      const schema = n.title({ property: "Name" });
+      const meta = notionRegistry.get(schema);
+      expect(meta?.extractor).toBe("title");
+      expect(meta?.notionProperty).toBe("Name");
     });
 
     it("parses a string", () => {
@@ -40,9 +46,11 @@ describe("builders", () => {
   });
 
   describe("n.richText", () => {
-    it("brands with extractor=richText", () => {
-      const schema = n.richText({ property: "desc" }) as unknown as { _notion: unknown };
-      expect(schema._notion).toEqual({ extractor: "richText", property: "desc" });
+    it("registers richText metadata", () => {
+      const schema = n.richText({ property: "desc" });
+      const meta = notionRegistry.get(schema);
+      expect(meta?.extractor).toBe("richText");
+      expect(meta?.notionProperty).toBe("desc");
     });
 
     it("parses a string", () => {
@@ -107,7 +115,11 @@ describe("builders", () => {
     });
 
     it("with enum: explicit fallback overrides default", () => {
-      const schema = n.select({ property: "env", enum: ["a", "b", "c"], fallback: "b" });
+      const schema = n.select({
+        property: "env",
+        enum: ["a", "b", "c"],
+        fallback: "b",
+      });
       expect(schema.parse(null)).toBe("b");
     });
 
@@ -118,14 +130,24 @@ describe("builders", () => {
     });
   });
 
-  describe("n.relation", () => {
-    it("without single: returns string array", () => {
-      const schema = n.relation({ property: "week" });
+  describe("n.singleRelation", () => {
+    it("transforms array to first id or empty string", () => {
+      const schema = n.singleRelation({ property: "week" });
+      expect(schema.parse(["id1", "id2"])).toBe("id1");
+      expect(schema.parse([])).toBe("");
+    });
+  });
+
+  describe("n.multiRelation", () => {
+    it("returns string array", () => {
+      const schema = n.multiRelation({ property: "week" });
       expect(schema.parse(["id1", "id2"])).toEqual(["id1", "id2"]);
     });
+  });
 
-    it("with single: transforms to first id or empty string", () => {
-      const schema = n.relation({ property: "week", single: true });
+  describe("n.relation", () => {
+    it("defaults to singleRelation behavior", () => {
+      const schema = n.relation({ property: "week" });
       expect(schema.parse(["id1", "id2"])).toBe("id1");
       expect(schema.parse([])).toBe("");
     });
@@ -152,20 +174,6 @@ describe("builders", () => {
     });
   });
 
-  describe("n.derived", () => {
-    it("brands with extractor=derived and carries the key", () => {
-      const schema = n.derived<boolean>("isCompleted") as unknown as { _notion: unknown };
-      expect(schema._notion).toEqual({ extractor: "derived", property: "isCompleted" });
-    });
-
-    it("registers derived metadata in notionRegistry", () => {
-      const schema = n.derived<number>("score");
-      const meta = notionRegistry.get(schema);
-      expect(meta?.derived).toBe(true);
-      expect(meta?.derivedKey).toBe("score");
-    });
-  });
-
   describe("n.markdown", () => {
     it("returns an optional string", () => {
       const schema = n.markdown();
@@ -173,9 +181,11 @@ describe("builders", () => {
       expect(schema.parse(undefined)).toBeUndefined();
     });
 
-    it("brands with extractor=markdown", () => {
-      const schema = n.markdown() as unknown as { _notion: unknown };
-      expect(schema._notion).toEqual({ extractor: "markdown", property: "markdown" });
+    it("registers markdown metadata in notionRegistry", () => {
+      const schema = n.markdown();
+      const meta = notionRegistry.get(schema);
+      expect(meta?.extractor).toBe("markdown");
+      expect(meta?.notionProperty).toBe("markdown");
     });
   });
 });

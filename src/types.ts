@@ -13,19 +13,11 @@ export interface NormConfig {
   onError?: (err: Error, ctx: Record<string, unknown>) => void;
 }
 
-export type DerivedResolver<Args = unknown> = (ctx: {
-  key: string;
-  args?: Args;
-  page: PageObjectResponse;
-}) => Promise<unknown | undefined>;
-
-export interface RetrieveOptions<Args = unknown> {
-  args?: Args;
-  derived?: DerivedResolver<Args>;
+export interface RetrieveOptions {
   includeMarkdown?: boolean;
 }
 
-export interface QueryOpts<Args = unknown> extends RetrieveOptions<Args> {
+export interface QueryOpts extends RetrieveOptions {
   filter?: Record<string, unknown>;
   sorts?: Array<Record<string, unknown>>;
 }
@@ -54,14 +46,22 @@ export interface NormAttachment {
  * Simplified input value per extractor type for `Model.create`.
  * Users supply these; the library translates to Notion's verbose format.
  */
-export type SimplifiedInput<E extends ExtractorType> =
-  E extends "title" | "richText" | "email" ? string
-  : E extends "number" | "url" ? string | number | null
-  : E extends "checkbox" ? boolean
-  : E extends "date" ? Date | string | null
-  : E extends "select" ? string
-  : E extends "multiSelect" | "relationIds" ? string[]
-  : never;
+export type SimplifiedInput<E extends ExtractorType> = E extends
+  | "title"
+  | "richText"
+  | "email"
+  ? string
+  : E extends "number" | "url"
+    ? string | number | null
+    : E extends "checkbox"
+      ? boolean
+      : E extends "date"
+        ? Date | string | null
+        : E extends "select"
+          ? string
+          : E extends "multiSelect" | "relationIds"
+            ? string[]
+            : never;
 
 /** Extractors that can be used when creating a page. */
 export type CreatableExtractor =

@@ -29,7 +29,8 @@ import type { RetrieveOptions } from "./types";
 
 const EXTRACTOR_MAP: Record<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  string, (page: PageObjectResponse, property: string) => any
+  string,
+  (page: PageObjectResponse, property: string) => any
 > = {
   title: getTitle,
   richText: getRichText,
@@ -47,39 +48,13 @@ const EXTRACTOR_MAP: Record<
 };
 
 /**
- * Unwrap Zod wrappers (Optional, Nullable, Default, Pipe, Transform) to find
- * the inner schema that carries the `_notion` brand and registry metadata.
- * Checks at each level — the metadata may be on any wrapper, not just the
- * innermost schema.
+ * Walk the Zod wrapper chain (Optional, Nullable, Default, Pipe, Transform)
+ * to find the inner schema that carries registry metadata. Returns the first
+ * schema that has metadata, or the innermost one if none found.
  */
-function unwrapSchema(schema: ZodType): ZodType {
-  if (schema instanceof ZodOptional) return unwrapSchema(schema.unwrap() as ZodType);
-  if (schema instanceof ZodNullable) return unwrapSchema(schema.unwrap() as ZodType);
-  if (schema instanceof ZodDefault) return unwrapSchema(schema.removeDefault() as ZodType);
-  if (schema instanceof ZodPipe) return unwrapSchema(schema.in as ZodType);
-  if (schema instanceof ZodTransform) return unwrapSchema((schema as unknown as { in: ZodType }).in);
-  return schema;
-}
-
-/**
- * Find the brand on a schema or any of its wrappers.
- * Checks the schema itself first, then unwraps layer by layer.
- */
-function getBrand(fieldSchema: ZodType): { extractor: string; property: string } | undefined {
-  let current: ZodType | undefined = fieldSchema;
-  while (current) {
-    const brand = (current as unknown as { _notion?: { extractor: string; property: string } })._notion;
-    if (brand) return brand;
-    current = unwrapOneLevel(current);
-  }
-  return undefined;
-}
-
-/**
- * Find the registry metadata on a schema or any of its wrappers.
- * Checks the schema itself first, then unwraps layer by layer.
- */
-function getFieldMeta(fieldSchema: ZodType): NotionFieldMeta | undefined {
+export function getNotionMeta(
+  fieldSchema: ZodType,
+): NotionFieldMeta | undefined {
   let current: ZodType | undefined = fieldSchema;
   while (current) {
     const meta = notionRegistry.get(current);
@@ -89,13 +64,14 @@ function getFieldMeta(fieldSchema: ZodType): NotionFieldMeta | undefined {
   return undefined;
 }
 
-/** Unwrap exactly one level. Returns undefined if no wrapper found. */
-function unwrapOneLevel(schema: ZodType): ZodType | undefined {
+/** Unwrap exactly one Zod wrapper level. Returns undefined if no wrapper found. */
+export function unwrapOneLevel(schema: ZodType): ZodType | undefined {
   if (schema instanceof ZodOptional) return schema.unwrap() as ZodType;
   if (schema instanceof ZodNullable) return schema.unwrap() as ZodType;
   if (schema instanceof ZodDefault) return schema.removeDefault() as ZodType;
   if (schema instanceof ZodPipe) return schema.in as ZodType;
-  if (schema instanceof ZodTransform) return (schema as unknown as { in: ZodType }).in;
+  if (schema instanceof ZodTransform)
+    return (schema as unknown as { in: ZodType }).in;
   return undefined;
 }
 
@@ -112,7 +88,7 @@ function extractField(
   return fn(page, property);
 }
 
-function getSchemaShape(schema: ZodType): Record<string, ZodType> {
+export function getSchemaShape(schema: ZodType): Record<string, ZodType> {
   if (schema instanceof ZodObject) {
     return schema.shape as Record<string, ZodType>;
   }
@@ -134,46 +110,28 @@ export async function retrieveFromPage<T extends ZodType>(
 ): Promise<z.infer<T>> {
   const shape = getSchemaShape(schema);
   const result: Record<string, unknown> = {};
-  const derivedPromises: Promise<void>[] = [];
 
   for (const [key, fieldSchema] of Object.entries(shape)) {
-    const brand = getBrand(fieldSchema);
-    const meta = getFieldMeta(fieldSchema);
+    const meta = getNotionMeta(fieldSchema);
 
     // Special-case: id always comes from page.id
-    if (brand?.extractor === "id" || key === "id") {
+    if (meta?.extractor === "id" || key === "id") {
       result[key] = page.id;
       continue;
     }
 
-    // Special-case: markdownContent fetched separately
-    if (brand?.extractor === "markdown") {
-      continue;
-    }
-
-    // Derived field — call the resolver hook
-    if (meta?.derived || brand?.extractor === "derived") {
-      const derivedKey = meta?.derivedKey ?? brand?.property ?? key;
-      derivedPromises.push(
-        (async () => {
-          const resolved = options?.derived
-            ? await options.derived({ key: derivedKey, args: options.args, page })
-            : undefined;
-          result[key] = resolved;
-        })(),
-      );
+    // Special-case: markdown content fetched separately
+    if (meta?.extractor === "markdown") {
       continue;
     }
 
     if (!meta) {
-      // No registry metadata — skip
+      // No registry metadata — skip (plain Zod field like .transform())
       continue;
     }
 
     result[key] = extractField(page, key, meta);
   }
-
-  await Promise.all(derivedPromises);
 
   if (options?.includeMarkdown && fnOpts?.getPageMarkdown) {
     result.markdownContent = await fnOpts.getPageMarkdown(page.id);
@@ -185,7 +143,10 @@ export async function retrieveFromPage<T extends ZodType>(
 export async function retrievePage<T extends ZodType>(
   pageId: string,
   schema: T,
-  getPageById: (pageId: string, opts?: { filterProperties?: string[] }) => Promise<PageObjectResponse | null>,
+  getPageById: (
+    pageId: string,
+    opts?: { filterProperties?: string[] },
+  ) => Promise<PageObjectResponse | null>,
   getPageMarkdown: (pageId: string) => Promise<string>,
   options?: RetrieveOptions,
   propertyNames?: readonly string[],
@@ -197,5 +158,3 @@ export async function retrievePage<T extends ZodType>(
 
   return retrieveFromPage(page, schema, options, { getPageMarkdown });
 }
-
-export { getSchemaShape, unwrapSchema };

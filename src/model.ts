@@ -1,67 +1,33 @@
 import type { z, ZodType, ZodRawShape } from "zod";
-import { ZodObject, ZodPipe, ZodOptional, ZodNullable, ZodDefault, ZodTransform } from "zod";
+import { ZodObject } from "zod";
 import type { NormClient } from "./client";
 import type { RetrieveOptions, QueryOpts } from "./types";
-import { notionRegistry, type NotionFieldMeta } from "./registry";
+import { getNotionMeta } from "./retriever";
 import { id as makeIdBuilder } from "./builders";
 
-export interface NormModel<T, CreateProps, Args> {
+export interface NormModel<T, CreateProps> {
   /** Marker for `n.getType` — holds the output type at the type level. */
   readonly _normType: T;
   /** The underlying Zod schema. Rarely needed directly; prefer `.parse()`/`.retrieve()`. */
   readonly schema: ZodType<T>;
-  /** Notion property names declared in the schema (excludes id/markdown/derived/icon). */
+  /** Notion property names declared in the schema (excludes id/markdown/icon). */
   readonly propertyNames: readonly string[];
   parse(data: unknown): T;
-  retrieve(pageId: string, opts?: RetrieveOptions<Args>): Promise<T | null>;
-  parsePage(page: PageObjectResponse, opts?: RetrieveOptions<Args>): Promise<T>;
+  retrieve(pageId: string, opts?: RetrieveOptions): Promise<T | null>;
+  parsePage(page: PageObjectResponse, opts?: RetrieveOptions): Promise<T>;
   create(input: {
     parent: Record<string, unknown>;
     properties: CreateProps;
     markdown?: string;
   }): Promise<string | null>;
-  query(databaseId: string, opts?: QueryOpts<Args>): Promise<T[]>;
+  query(databaseId: string, opts?: QueryOpts): Promise<T[]>;
 }
 
 import type { PageObjectResponse } from "@notionhq/client/build/src/api-endpoints";
 
-// ─── helpers to extract brand metadata from a Zod schema ─────────────────────
-
-function unwrapOneLevel(schema: ZodType): ZodType | undefined {
-  if (schema instanceof ZodOptional) return schema.unwrap() as ZodType;
-  if (schema instanceof ZodNullable) return schema.unwrap() as ZodType;
-  if (schema instanceof ZodDefault) return schema.removeDefault() as ZodType;
-  if (schema instanceof ZodPipe) return schema.in as ZodType;
-  if (schema instanceof ZodTransform) return (schema as unknown as { in: ZodType }).in;
-  return undefined;
-}
-
-function getBrand(fieldSchema: ZodType): { extractor: string; property: string } | undefined {
-  let current: ZodType | undefined = fieldSchema;
-  while (current) {
-    const brand = (current as unknown as { _notion?: { extractor: string; property: string } })._notion;
-    if (brand) return brand;
-    current = unwrapOneLevel(current);
-  }
-  return undefined;
-}
-
-function getFieldMeta(fieldSchema: ZodType): NotionFieldMeta | undefined {
-  let current: ZodType | undefined = fieldSchema;
-  while (current) {
-    const meta = notionRegistry.get(current);
-    if (meta) return meta;
-    current = unwrapOneLevel(current);
-  }
-  return undefined;
-}
-
 // ─── translate simplified input → Notion verbose property format ─────────────
 
-function translateProperty(
-  extractor: string,
-  value: unknown,
-): unknown {
+function translateProperty(extractor: string, value: unknown): unknown {
   switch (extractor) {
     case "title":
       return { title: [{ text: { content: String(value) } }] };
@@ -77,7 +43,8 @@ function translateProperty(
       return { email: String(value) };
     case "date": {
       if (value === null) return { date: null };
-      const dateStr = value instanceof Date ? value.toISOString() : String(value);
+      const dateStr =
+        value instanceof Date ? value.toISOString() : String(value);
       return { date: { start: dateStr } };
     }
     case "select":
@@ -97,25 +64,28 @@ function translateProperty(
 
 // ─── norm.object implementation ──────────────────────────────────────────────
 
-export function defineObject<TShape extends ZodRawShape, TArgs = void>(
+export function defineObject<TShape extends ZodRawShape>(
   client: NormClient,
   shape: TShape,
   opts?: {
     transform?: (data: z.infer<ZodObject<TShape>>) => unknown;
   },
-): NormModel<unknown, unknown, TArgs> {
+): NormModel<unknown, unknown> {
   // Auto-inject id: n.id() if not present
-  const finalShape: ZodRawShape = "id" in shape ? shape : { id: makeIdField(), ...shape };
+  const finalShape: ZodRawShape =
+    "id" in shape ? shape : { id: makeIdField(), ...shape };
 
-  const baseSchema = new ZodObject({ shape: finalShape } as never) as unknown as ZodObject<TShape>;
+  const baseSchema = new ZodObject({
+    shape: finalShape,
+  } as never) as unknown as ZodObject<TShape>;
   const schema = opts?.transform
-    ? baseSchema.transform(opts.transform as never) as ZodType
-    : baseSchema as ZodType;
+    ? (baseSchema.transform(opts.transform as never) as ZodType)
+    : (baseSchema as ZodType);
 
   // Collect property names for filter_properties
   const propertyNames = collectPropertyNames(finalShape);
 
-  const self: NormModel<unknown, unknown, unknown> = {
+  const self: NormModel<unknown, unknown> = {
     _normType: undefined as unknown,
     schema: schema as ZodType<unknown>,
     propertyNames,
@@ -123,10 +93,19 @@ export function defineObject<TShape extends ZodRawShape, TArgs = void>(
       return (schema as ZodType<unknown>).parse(data);
     },
     async retrieve(pageId, retrieveOpts) {
-      return client.retrievePage(pageId, schema as ZodType<unknown>, retrieveOpts as RetrieveOptions, propertyNames);
+      return client.retrievePage(
+        pageId,
+        schema as ZodType<unknown>,
+        retrieveOpts as RetrieveOptions,
+        propertyNames,
+      );
     },
     async parsePage(page, parseOpts) {
-      return client.retrieveFromPage(page, schema as ZodType<unknown>, parseOpts as RetrieveOptions);
+      return client.retrieveFromPage(
+        page,
+        schema as ZodType<unknown>,
+        parseOpts as RetrieveOptions,
+      );
     },
     async create(input) {
       const translated: Record<string, unknown> = {};
@@ -151,7 +130,11 @@ export function defineObject<TShape extends ZodRawShape, TArgs = void>(
       });
       return Promise.all(
         results.map((page) =>
-          client.retrieveFromPage(page, schema as ZodType<unknown>, queryOpts as RetrieveOptions)
+          client.retrieveFromPage(
+            page,
+            schema as ZodType<unknown>,
+            queryOpts as RetrieveOptions,
+          ),
         ),
       );
     },
@@ -169,25 +152,27 @@ function makeIdField(): ZodType {
 function collectPropertyNames(shape: ZodRawShape): string[] {
   const names: string[] = [];
   for (const [key, fieldSchema] of Object.entries(shape)) {
-    const brand = getBrand(fieldSchema as ZodType);
-    const meta = getFieldMeta(fieldSchema as ZodType);
-    if (!brand && !meta) continue;
-    const extractor = brand?.extractor ?? meta?.extractor;
+    const meta = getNotionMeta(fieldSchema as ZodType);
+    if (!meta) continue;
+    const extractor = meta.extractor;
     if (!extractor) continue;
-    if (extractor === "id" || extractor === "markdown" || extractor === "derived") continue;
-    const property = meta?.notionProperty ?? brand?.property ?? key;
+    if (extractor === "id" || extractor === "markdown") continue;
+    const property = meta.notionProperty ?? key;
     if (property === "__icon__") continue;
     names.push(property);
   }
   return names;
 }
 
-function findExtractorByProperty(shape: ZodRawShape, propertyName: string): { extractor?: string } {
+function findExtractorByProperty(
+  shape: ZodRawShape,
+  propertyName: string,
+): { extractor?: string } {
   for (const [, fieldSchema] of Object.entries(shape)) {
-    const brand = getBrand(fieldSchema as ZodType);
-    const meta = getFieldMeta(fieldSchema as ZodType);
-    const extractor = brand?.extractor ?? meta?.extractor;
-    const property = meta?.notionProperty ?? brand?.property;
+    const meta = getNotionMeta(fieldSchema as ZodType);
+    if (!meta) continue;
+    const extractor = meta.extractor;
+    const property = meta.notionProperty;
     if (property === propertyName && extractor) {
       return { extractor };
     }

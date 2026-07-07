@@ -66,10 +66,9 @@ describe("norm.object (model factory)", () => {
       expect(Model.propertyNames).toEqual(["title", "order", "youtube_url"]);
     });
 
-    it("excludes derived fields and markdown", () => {
+    it("excludes markdown from propertyNames", () => {
       const Model = norm.object({
         title: n.title(),
-        isCompleted: n.derived<boolean>("isCompleted").default(false),
         markdownContent: n.markdown().optional(),
       });
 
@@ -97,7 +96,7 @@ describe("norm.object (model factory)", () => {
         youtubeUrl: n.url({ property: "youtube_url" }),
       });
 
-      const result = await Model.parsePage(lessons["lesson-1"]!) as { title: string; order: number; youtubeUrl: string | null };
+      const result = await Model.parsePage(lessons["lesson-1"]!);
       expect(result.title).toBe("Getting Started");
       expect(result.order).toBe(1);
       expect(result.youtubeUrl).toBe("https://youtube.com/watch?v=video1");
@@ -108,7 +107,7 @@ describe("norm.object (model factory)", () => {
         title: n.title(),
       });
 
-      const result = await Model.parsePage(lessons["lesson-1"]!) as { id: string };
+      const result = await Model.parsePage(lessons["lesson-1"]!);
       expect(result.id).toBe("lesson-1");
     });
   });
@@ -123,7 +122,7 @@ describe("norm.object (model factory)", () => {
         order: n.number({ property: "order" }),
       });
 
-      const result = await Model.retrieve("lesson-1") as { title: string; order: number } | null;
+      const result = await Model.retrieve("lesson-1");
 
       expect(mockClient.pages.retrieve).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -155,10 +154,10 @@ describe("norm.object (model factory)", () => {
         order: n.number({ property: "order" }),
       });
 
-      const results = await Model.query("ds_lessons", {
+      const results = (await Model.query("ds_lessons", {
         filter: { property: "published", checkbox: { equals: true } },
         sorts: [{ property: "order", direction: "ascending" }],
-      }) as Array<{ title: string }>;
+      })) as Array<{ title: string }>;
 
       expect(mockClient.dataSources.query).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -204,13 +203,17 @@ describe("norm.object (model factory)", () => {
       expect(result).toBe("new-page-1");
 
       // Verify the properties were translated
-      const call = mockClient.pages.create.mock.calls[0]![0] as { properties: Record<string, unknown> };
+      const call = mockClient.pages.create.mock.calls[0]![0] as {
+        properties: Record<string, unknown>;
+      };
       expect(call.properties.title).toEqual({
         title: [{ text: { content: "New Lesson" } }],
       });
       expect(call.properties.order).toEqual({ number: 10 });
       expect(call.properties.published).toEqual({ checkbox: true });
-      expect(call.properties.youtube_url).toEqual({ url: "https://youtube.com/watch?v=abc" });
+      expect(call.properties.youtube_url).toEqual({
+        url: "https://youtube.com/watch?v=abc",
+      });
     });
 
     it("handles null values", async () => {
@@ -231,7 +234,9 @@ describe("norm.object (model factory)", () => {
         },
       });
 
-      const call = mockClient.pages.create.mock.calls[0]![0] as { properties: Record<string, unknown> };
+      const call = mockClient.pages.create.mock.calls[0]![0] as {
+        properties: Record<string, unknown>;
+      };
       expect(call.properties.order).toEqual({ number: null });
       expect(call.properties.youtube_url).toEqual({ url: null });
     });
@@ -254,35 +259,15 @@ describe("norm.object (model factory)", () => {
         },
       });
 
-      const call = mockClient.pages.create.mock.calls[0]![0] as { properties: Record<string, unknown> };
+      const call = mockClient.pages.create.mock.calls[0]![0] as {
+        properties: Record<string, unknown>;
+      };
       expect(call.properties.week).toEqual({
         relation: [{ id: "week-1" }, { id: "week-2" }],
       });
       expect(call.properties.tags).toEqual({
         multi_select: [{ name: "a" }, { name: "b" }],
       });
-    });
-  });
-
-  describe("derived fields", () => {
-    it("passes args and calls derived resolver", async () => {
-      mockClient.pages.retrieve.mockResolvedValue(lessons["lesson-1"]!);
-      mockClient.pages.retrieveMarkdown.mockResolvedValue({ markdown: "" });
-
-      const Model = norm.object({
-        title: n.title(),
-        isCompleted: n.derived<boolean>("isCompleted").default(false),
-      });
-
-      const result = await Model.retrieve("lesson-1", {
-        args: { studentId: "s1" } as never,
-        derived: async ({ key, args }) => {
-          if (key === "isCompleted" && args) return true;
-          return undefined;
-        },
-      }) as { isCompleted: boolean };
-
-      expect(result?.isCompleted).toBe(true);
     });
   });
 
@@ -319,12 +304,34 @@ describe("norm.object (model factory)", () => {
       const page = {
         ...cohorts["cohort-1"]!,
         properties: {
-          option_1: { type: "rich_text", rich_text: [{ plain_text: "A", text: { content: "A", link: null }, type: "text", href: null, annotations: {} }] },
-          option_2: { type: "rich_text", rich_text: [{ plain_text: "B", text: { content: "B", link: null }, type: "text", href: null, annotations: {} }] },
+          option_1: {
+            type: "rich_text",
+            rich_text: [
+              {
+                plain_text: "A",
+                text: { content: "A", link: null },
+                type: "text",
+                href: null,
+                annotations: {},
+              },
+            ],
+          },
+          option_2: {
+            type: "rich_text",
+            rich_text: [
+              {
+                plain_text: "B",
+                text: { content: "B", link: null },
+                type: "text",
+                href: null,
+                annotations: {},
+              },
+            ],
+          },
         },
       };
 
-      const result = await Model.parsePage(page as never) as { options: [string, string] };
+      const result = await Model.parsePage(page as never);
       expect(result.options).toEqual(["A", "B"]);
     });
   });

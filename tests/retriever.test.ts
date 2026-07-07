@@ -11,10 +11,15 @@ describe("retriever", () => {
       title: n.title(),
       order: n.number({ property: "order" }),
       youtubeUrl: n.url({ property: "youtube_url" }),
-      weekId: n.relation({ property: "week", single: true }),
+      weekId: n.singleRelation({ property: "week" }),
       weekTitle: n.rollupText({ property: "week_title" }),
-      estimatedMinutes: n.number({ property: "estimated_minutes" }).transform((v) => v ?? 5),
-      codeEnv: n.select({ property: "code_env", enum: ["no_code", "test_runner", "ai_code_analysis", "submission"] }),
+      estimatedMinutes: n
+        .number({ property: "estimated_minutes" })
+        .transform((v: number | null) => v ?? 5),
+      codeEnv: n.select({
+        property: "code_env",
+        enum: ["no_code", "test_runner", "ai_code_analysis", "submission"],
+      }),
       published: n.checkbox({ property: "published" }),
     });
 
@@ -86,7 +91,7 @@ describe("retriever", () => {
       title: n.title(),
       weekNumber: n.number({ property: "week_number" }),
       published: n.checkbox({ property: "published" }),
-      cohortId: n.relation({ property: "cohort", single: true }),
+      cohortId: n.singleRelation({ property: "cohort" }),
     });
 
     it("extracts week-1", async () => {
@@ -101,66 +106,6 @@ describe("retriever", () => {
     });
   });
 
-  describe("retrieveFromPage with derived fields", () => {
-    const schema = z.object({
-      id: n.id(),
-      title: n.title(),
-      isCompleted: n.derived<boolean>("isCompleted").default(false),
-      score: n.derived<number | undefined>("score").optional(),
-    });
-
-    it("calls derived resolver for each derived field", async () => {
-      const page = lessons["lesson-1"]!;
-      const calls: string[] = [];
-      const result = await retrieveFromPage(page, schema, {
-        args: { studentId: "student-1", cohortId: "cohort-1" },
-        derived: async ({ key }) => {
-          calls.push(key);
-          if (key === "isCompleted") return true;
-          if (key === "score") return 95;
-          return undefined;
-        },
-      });
-
-      expect(calls).toContain("isCompleted");
-      expect(calls).toContain("score");
-      expect(result.isCompleted).toBe(true);
-      expect(result.score).toBe(95);
-    });
-
-    it("falls back to .default() when resolver returns undefined", async () => {
-      const page = lessons["lesson-1"]!;
-      const result = await retrieveFromPage(page, schema, {
-        derived: async () => undefined,
-      });
-
-      expect(result.isCompleted).toBe(false);
-      expect(result.score).toBeUndefined();
-    });
-
-    it("falls back to .default() when no resolver provided", async () => {
-      const page = lessons["lesson-1"]!;
-      const result = await retrieveFromPage(page, schema);
-
-      expect(result.isCompleted).toBe(false);
-    });
-
-    it("passes args to the resolver", async () => {
-      const page = lessons["lesson-1"]!;
-      const result = await retrieveFromPage(page, schema, {
-        args: { studentId: "s1", cohortId: "c1" },
-        derived: async ({ args }) => {
-          if (!args) return undefined;
-          // Type assertion for test
-          const a = args as { studentId: string; cohortId: string };
-          return a.studentId === "s1" ? true : false;
-        },
-      });
-
-      expect(result.isCompleted).toBe(true);
-    });
-  });
-
   describe("retrieveFromPage with markdown", () => {
     const schema = z.object({
       id: n.id(),
@@ -170,20 +115,30 @@ describe("retriever", () => {
 
     it("fetches markdown when includeMarkdown=true", async () => {
       const page = lessons["lesson-1"]!;
-      const result = await retrieveFromPage(page, schema, {
-        includeMarkdown: true,
-      }, {
-        getPageMarkdown: async () => "# Hello World",
-      });
+      const result = await retrieveFromPage(
+        page,
+        schema,
+        {
+          includeMarkdown: true,
+        },
+        {
+          getPageMarkdown: async () => "# Hello World",
+        },
+      );
 
       expect(result.markdownContent).toBe("# Hello World");
     });
 
     it("does not fetch markdown when includeMarkdown not set", async () => {
       const page = lessons["lesson-1"]!;
-      const result = await retrieveFromPage(page, schema, {}, {
-        getPageMarkdown: async () => "should not be called",
-      });
+      const result = await retrieveFromPage(
+        page,
+        schema,
+        {},
+        {
+          getPageMarkdown: async () => "should not be called",
+        },
+      );
 
       expect(result.markdownContent).toBeUndefined();
     });
