@@ -435,6 +435,39 @@ type getType<M> = M extends { readonly _normType: infer T } ? T : never;
 
 ---
 
+## Lazy initialization
+
+By default you pass a `Client` instance to `NormClient`. For advanced scenarios where you need to defer or re-resolve the Notion client (e.g. serverless environments where auth may not be ready at import time, or per-request credentials), pass a **factory function** instead:
+
+```ts
+import { NormClient } from "@adullamtech/norm";
+import { Client } from "@notionhq/client";
+
+const norm = new NormClient({
+  // Factory is called on the first Notion API call, not at construction
+  client: () => new Client({ auth: process.env.NOTION_API_KEY }),
+  onWarn: (msg, ctx) => console.warn(msg, ctx),
+  onError: (err, ctx) => console.error(err, ctx),
+});
+```
+
+The factory is invoked **once** and the result is cached for all subsequent calls. Concurrent requests that fire before the factory resolves are automatically deduplicated — the factory is still only called a single time.
+
+Async factories are supported too:
+
+```ts
+const norm = new NormClient({
+  client: async () => {
+    const auth = await fetchAuthToken();
+    return new Client({ auth });
+  },
+});
+```
+
+This pairs well with serverless environments where you want to lazily create the Notion client only when a route is actually hit.
+
+---
+
 ## Auto `filter_properties`
 
 norm automatically requests only the properties declared in the schema:

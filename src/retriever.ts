@@ -28,9 +28,8 @@ import {
 import type { RetrieveOptions } from "./types";
 
 const EXTRACTOR_MAP: Record<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   string,
-  (page: PageObjectResponse, property: string) => any
+  (page: PageObjectResponse, property: string) => unknown
 > = {
   title: getTitle,
   richText: getRichText,
