@@ -2,7 +2,6 @@
   "name": "@adullamtech/norm",
   "version": "0.1.12",
   "description": "A Notion ORM for TypeScript. Define Notion-backed models with a declarative schema, retrieve/create pages with type safety.",
-  "packageManager": "pnpm@10.11.0",
   "type": "module",
   "license": "MIT",
   "author": {
