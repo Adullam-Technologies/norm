@@ -110,26 +110,26 @@ export function select<P extends string>(opts: {
   return reg(z.string().nullable(), property, "select").brand<`select::${P}`>();
 }
 
-// ─── relation ────────────────────────────────────────────────────────────────
+// ─── singleRelation ──────────────────────────────────────────────────────────
 
-export function relation<
-  P extends string,
-  S extends boolean | undefined = undefined,
->(
-  opts: { property: P; single?: S },
-): S extends true
-  ? z.ZodType<string & NotionBrand<"relationIds", P>>
-  : z.ZodType<(string & NotionBrand<"relationIds", P>)[]> {
-  const base = z.array(z.string());
-  const schema = opts.single
-    ? reg(
-        base.transform((ids: string[]) => ids[0] ?? ""),
-        opts.property,
-        "relationIds",
-      )
-    : reg(base, opts.property, "relationIds");
-  return schema.brand<`relationIds::${P}`>() as never;
+export function singleRelation<P extends string>(opts: { property: P }) {
+  const schema = reg(
+    z.array(z.string()).transform((ids: string[]) => ids[0] ?? ""),
+    opts.property,
+    "relationIds",
+  );
+  return schema.brand<`relationIds::${P}`>();
 }
+
+// ─── multiRelation ───────────────────────────────────────────────────────────
+
+export function multiRelation<P extends string>(opts: { property: P }) {
+  const schema = reg(z.array(z.string()), opts.property, "relationIds");
+  return schema.brand<`relationIds::${P}`>();
+}
+
+/** Default alias — `relation` is `singleRelation`. */
+export const relation = singleRelation;
 
 // ─── rollupText ──────────────────────────────────────────────────────────────
 
@@ -184,6 +184,8 @@ export const n = {
   date,
   multiSelect,
   select,
+  singleRelation,
+  multiRelation,
   relation,
   rollupText,
   rollupRelation,

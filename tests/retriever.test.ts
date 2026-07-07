@@ -11,7 +11,7 @@ describe("retriever", () => {
       title: n.title(),
       order: n.number({ property: "order" }),
       youtubeUrl: n.url({ property: "youtube_url" }),
-      weekId: n.relation({ property: "week", single: true }),
+      weekId: n.singleRelation({ property: "week" }),
       weekTitle: n.rollupText({ property: "week_title" }),
       estimatedMinutes: n
         .number({ property: "estimated_minutes" })
@@ -91,7 +91,7 @@ describe("retriever", () => {
       title: n.title(),
       weekNumber: n.number({ property: "week_number" }),
       published: n.checkbox({ property: "published" }),
-      cohortId: n.relation({ property: "cohort", single: true }),
+      cohortId: n.singleRelation({ property: "cohort" }),
     });
 
     it("extracts week-1", async () => {

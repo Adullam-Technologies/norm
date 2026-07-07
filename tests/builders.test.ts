@@ -130,14 +130,24 @@ describe("builders", () => {
     });
   });
 
-  describe("n.relation", () => {
-    it("without single: returns string array", () => {
-      const schema = n.relation({ property: "week" });
+  describe("n.singleRelation", () => {
+    it("transforms array to first id or empty string", () => {
+      const schema = n.singleRelation({ property: "week" });
+      expect(schema.parse(["id1", "id2"])).toBe("id1");
+      expect(schema.parse([])).toBe("");
+    });
+  });
+
+  describe("n.multiRelation", () => {
+    it("returns string array", () => {
+      const schema = n.multiRelation({ property: "week" });
       expect(schema.parse(["id1", "id2"])).toEqual(["id1", "id2"]);
     });
+  });
 
-    it("with single: transforms to first id or empty string", () => {
-      const schema = n.relation({ property: "week", single: true });
+  describe("n.relation", () => {
+    it("defaults to singleRelation behavior", () => {
+      const schema = n.relation({ property: "week" });
       expect(schema.parse(["id1", "id2"])).toBe("id1");
       expect(schema.parse([])).toBe("");
     });
