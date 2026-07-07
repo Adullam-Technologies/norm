@@ -1,8 +1,40 @@
 # @adullamtech/norm
 
-A Notion ORM for TypeScript. Define Notion-backed models with a declarative schema, retrieve/create pages with type safety, and let the library handle property extraction, translation, and response filtering.
+A Notion ORM for TypeScript. Define Notion-backed models with a declarative schema, retrieve/create/query pages with full type safety, and let the library handle all the Notion verbosity — property extraction, value translation, response filtering — so you don't have to.
 
-Framework-agnostic — no Next.js, no Sentry, no env. You bring the `@notionhq/client` instance; `norm` does the rest.
+Framework-agnostic. No Next.js, no Sentry, no hidden dependencies. You bring the `@notionhq/client` instance; `norm` does the rest.
+
+---
+
+## Why norm?
+
+Working with the Notion API directly means writing **a lot** of boilerplate. Every page response comes back as a deeply nested JSON blob. Every property needs manual extraction with type guards. Creating a page requires the verbose Notion property format. Querying a database returns every property even when you only need three. And none of it is type-safe.
+
+**norm** eliminates all of that:
+
+```ts
+// ❌ Without norm: manual extraction, verbose JSON, no types
+const response = await notion.pages.retrieve({ page_id: "abc" });
+const prop = response.properties as Record<string, any>;
+const title = prop.Name.title?.[0]?.plain_text ?? "";
+const status = prop.Status.select?.name ?? null;
+const price = prop.Price.number ?? null;
+// ... repeat for every field, every time
+
+// ✅ With norm: declare once, use everywhere
+const product = await Product.retrieve("abc");
+//    ^? ProductModel — fully typed, no manual extraction
+console.log(product.title, product.status, product.price);
+```
+
+**With norm, you:**
+1. **Declare a model** — map Notion properties to clean TypeScript fields using simple builders
+2. **Get type safety** — both for reading and creating pages. Typos in property names? Wrong value types? Compile errors
+3. **Forget the Notion format** — the library extracts values on read, translates simplified values on write
+4. **Save bandwidth** — only requested properties are returned from the API (`filter_properties` is automatic)
+5. **Add computed fields** — `n.derived()` for values that come from your business logic, not Notion
+
+---
 
 ## Installation
 
@@ -11,6 +43,8 @@ pnpm add @adullamtech/norm @notionhq/client zod
 ```
 
 `zod` and `@notionhq/client` are peer dependencies.
+
+---
 
 ## Quick start
 
@@ -23,106 +57,297 @@ const norm = new NormClient({
   onWarn: (msg, ctx) => console.warn(msg, ctx),
   onError: (err, ctx) => console.error(err, ctx),
 });
+
+export { norm };
 ```
 
-### Define a model
+That's your one-time setup. Now define models.
+
+---
+
+## Models — the heart of norm
+
+A model is a declarative map between your Notion database columns and TypeScript fields. You define it once; everything else flows from it.
+
+### Simple example: a Product database
+
+Suppose you have a Notion database called **Products** with columns: `Name` (title), `Price` (number), `Status` (select), `In Stock` (checkbox), `Tags` (multi-select), and `SKU` (rich text).
 
 ```ts
-interface LessonArgs {
-  studentId: string;
-  cohortId: string;
-  contentType: "lesson" | "quiz" | "todo";
-}
-
-export const Lesson = norm.object({
-  // id is auto-injected — you don't write it
-  title: n.title(),
-  order: n.number({ property: "order" }),
-  youtubeUrl: n.url({ property: "youtube_url" }),
-  bunnyVideoId: n.richText({ property: "bunny_video_id" }).optional(),
-  weekId: n.relation({ property: "week", single: true }),
-  weekTitle: n.rollupText({ property: "week_title" }),
-  estimatedMinutes: n.number({ property: "estimated_minutes" }).transform(v => v ?? 5),
-  codeEnv: n.select({
-    property: "code_env",
-    enum: ["no_code", "test_runner", "ai_code_analysis", "submission"],
-    // fallback defaults to the first enum option ("no_code") if omitted
+export const Product = norm.object({
+  title: n.title(),                                    // maps to the "title" property
+  price: n.number({ property: "Price" }),
+  status: n.select({
+    property: "Status",
+    enum: ["active", "draft", "archived"],
   }),
-  starterCode: n.richText({ property: "starter_code" }).default("# Write your code here\n\n"),
-  isCompleted: n.derived<boolean, LessonArgs>("isCompleted").default(false),
-  score: n.derived<number | undefined, LessonArgs>("score").optional(),
-  isLocked: n.derived<boolean>("isLocked").default(false),
-  markdownContent: n.markdown().optional(),
+  inStock: n.checkbox({ property: "In Stock" }),
+  tags: n.multiSelect({ property: "Tags" }),
+  sku: n.richText({ property: "SKU" }).optional(),
 });
 
-export type LessonModel = n.getType<typeof Lesson>;
+// Extract the output type
+export type ProductModel = n.getType<typeof Product>;
+//    ^? { id: string; title: string; price: number | null; status: "active" | "draft" | "archived"; inStock: boolean; tags: string[]; sku?: string | undefined }
 ```
 
-### Retrieve a page (with derived properties)
+That's it. The `property` option tells norm which Notion column to read/write. The TypeScript field name (`title`, `price`, etc.) is what you use in code.
+
+### `n.select` with enums and fallbacks
 
 ```ts
-const lesson = await Lesson.retrieve(lessonId, {
-  args: { studentId, cohortId, contentType: "lesson" },
-  derived: async ({ key, args, page }) => {
-    if (!args) return undefined;
-    if (key === "isCompleted") return isContentCompleted(page.id, args.studentId, args.cohortId, args.contentType);
-    if (key === "score") return (await getProgress(page.id, args.studentId, args.cohortId, args.contentType))?.score;
-    if (key === "isLocked") return false;
-    return undefined;
-  },
-  includeMarkdown: true,
+const status = n.select({
+  property: "Status",
+  enum: ["active", "draft", "archived"],
+  // fallback defaults to the first enum option ("active") if omitted
 });
+// Type: "active" | "draft" | "archived"  (never null — falls back to default)
 ```
 
-The `args` is typed as `LessonArgs | undefined` (inferred from the derived fields' args types). The `derived` resolver dispatches by `key`. If it returns `undefined`, the field falls back to `.default()` / `.optional()`.
+Without `enum`, the type is `string | null` and no fallback is applied.
 
-### Query a database (auto filter_properties + auto parse)
+### `n.relation` — single vs array
 
 ```ts
-const lessons = await Lesson.query(env.NOTION_DS_LESSONS, {
+// Single relation — returns the first ID as a string, or ""
+const categoryId = n.relation({ property: "Category", single: true });
+// Type: string
+
+// Multi relation — returns an array of IDs
+const tagIds = n.relation({ property: "Tags" });
+// Type: string[]
+```
+
+### `n.select` with rollups
+
+```ts
+// Roll up a text value from a related database
+const categoryName = n.rollupText({ property: "Category Name" });
+// Type: string
+
+// Roll up relation IDs from a related database
+const relatedItems = n.rollupRelation({ property: "Related Items" });
+// Type: string[]
+```
+
+---
+
+## Reading data
+
+### Retrieve a single page by ID
+
+```ts
+const product = await Product.retrieve("some-page-id");
+//    ^? ProductModel | null
+
+if (product) {
+  console.log(product.title, product.price, product.status);
+}
+```
+
+### Parse an already-fetched page
+
+Useful when you already have a `PageObjectResponse` from somewhere else:
+
+```ts
+const product = await Product.parsePage(existingPage);
+//    ^? ProductModel
+```
+
+### Query a database
+
+```ts
+const products = await Product.query("ds_abc123", {
   filter: {
     and: [
-      { property: "week", relation: { contains: weekId } },
-      { property: "published", checkbox: { equals: true } },
+      { property: "Status", select: { equals: "active" } },
+      { property: "In Stock", checkbox: { equals: true } },
     ],
   },
-  sorts: [{ property: "order", direction: "ascending" }],
-  args: { studentId, cohortId, contentType: "lesson" },
-  derived: async ({ key, args, page }) => {
-    if (!args) return undefined;
-    if (key === "isCompleted") return isContentCompleted(page.id, args.studentId, args.cohortId, args.contentType);
-    if (key === "score") return (await getProgress(page.id, args.studentId, args.cohortId, args.contentType))?.score;
-    return undefined;
-  },
+  sorts: [{ property: "Price", direction: "ascending" }],
 });
-// lessons is already LessonModel[] — no manual parsePage step
+// products is ProductModel[] — fully typed, no manual parsing
 ```
 
-`Lesson.query` automatically:
-1. Calls `queryDatabase` with `filter_properties` set to the schema's property names (slimmer Notion responses, faster queries)
-2. Parses each result page through `Lesson.parsePage` (passing through `args`/`derived`/`includeMarkdown`)
+**`query()` automatically:**
+1. Sends `filter_properties` with only your schema's property names — slimmer responses, faster queries
+2. Parses every result page through the schema — you get typed models back immediately
 
-### Create a page (schema-typed, simplified input)
+### Include page content as markdown
+
+For databases with rich page content, pass `includeMarkdown: true`:
 
 ```ts
-const pageId = await Lesson.create({
+const product = await Product.retrieve(pageId, {
+  includeMarkdown: true,
+});
+// product.markdownContent?: string  — the full page as markdown
+```
+
+This fetches the page's markdown representation via a second API call. The field only exists if you declared `n.markdown().optional()` in your schema.
+
+---
+
+## Creating pages
+
+Creating a Notion page with the raw API is verbose. With norm, you provide **simplified values** that match your model's field types:
+
+```ts
+const pageId = await Product.create({
   parent: { data_source_id: "ds_abc123" },
   properties: {
-    title: "Intro to JavaScript",
-    order: 5,
-    youtube_url: null,
-    week: ["week_abc123"],
-    code_env: "test_runner",
-    estimated_minutes: 30,
-    starter_code: "# Start here\n\n",
+    title: "Ergonomic Keyboard",
+    Price: 149.99,
+    Status: "active",
+    "In Stock": true,
+    Tags: ["electronics", "keyboards"],
+    SKU: "KB-001",
   },
-  markdown: "# Hello\n\nLesson content...",
+  markdown: "# Ergonomic Keyboard\n\nA mechanical keyboard with **RGB backlighting**.\n\n- Wireless\n- Hot-swappable switches\n- USB-C charging",
 });
 ```
 
-The `properties` keys are the **Notion property names** (from the schema's `n.*({ property: "..." })`). The values are **simplified** — `string` for title/richText/select/email, `number | null` for number/url, `boolean` for checkbox, `string[]` for multiSelect/relation, `Date | string | null` for date. The library translates these to Notion's verbose format internally.
+**Simplified value mapping:**
 
-All properties are optional. Rollup/derived/id/markdown fields are excluded from the create input — the type system enforces this. Typos in property names or wrong value types are **compile errors**.
+| Notion type | Simplified input |
+|---|---|
+| Title | `string` |
+| Rich text | `string` |
+| Number | `number \| null` |
+| URL | `string \| null` |
+| Email | `string` |
+| Checkbox | `boolean` |
+| Date | `Date \| string \| null` |
+| Select | `string` (enum member) or `string \| null` |
+| Multi-select | `string[]` |
+| Relation | `string[]` |
+
+norm translates these to Notion's verbose format internally. **Typos in property names or wrong value types are compile errors.** Rollup, derived, id, and markdown fields are automatically excluded from the create input — you can't accidentally try to write to a computed field.
+
+---
+
+## Computed fields with `n.derived`
+
+Not every field lives in Notion. Sometimes you need to enrich a page with data from your own database, an external API, or business logic. That's what `n.derived` is for.
+
+```ts
+export const Order = norm.object({
+  title: n.title(),
+  total: n.number({ property: "Total" }),
+  status: n.select({ property: "Status", enum: ["pending", "paid", "shipped", "cancelled"] }),
+  isOverdue: n.derived<boolean>("isOverdue").default(false),
+  daysSinceOrder: n.derived<number | undefined>("daysSinceOrder").optional(),
+  // With args typed per-field:
+  customerTier: n.derived<string, { customerId: string }>("customerTier").default("standard"),
+});
+
+type OrderModel = n.getType<typeof Order>;
+```
+
+Then resolve them when retrieving:
+
+```ts
+const order = await Order.retrieve(orderId, {
+  args: { customerId: "cus_123" },
+  derived: async ({ key, args, page }) => {
+    if (key === "isOverdue") return checkIfOverdue(page.id);
+    if (key === "daysSinceOrder") return calculateDaysSince(page.id);
+    if (key === "customerTier" && args) return getTier(args.customerId);
+    return undefined; // fall back to .default() / .optional()
+  },
+});
+```
+
+**How it works:**
+- The `derived` resolver is called once per `n.derived` field
+- `args` flows from the call site to the resolver (typed via the generic parameter)
+- `undefined` return → field falls back to its schema `.default()` or `.optional()`
+- The `key` lets you dispatch with a `switch` / `if` chain
+
+You can also query with derived fields:
+
+```ts
+const orders = await Order.query(databaseId, {
+  filter: { property: "Status", select: { equals: "paid" } },
+  args: { customerId: "cus_123" },
+  derived: async ({ key, args, page }) => { /* ... */ },
+});
+```
+
+---
+
+## Page icon
+
+```ts
+export const Book = norm.object({
+  title: n.title(),
+  icon: n.pageIcon(),
+});
+
+const book = await Book.retrieve(pageId);
+console.log(book.icon); // string | null — the emoji or image URL
+```
+
+---
+
+## Transforming output
+
+Need to massage the parsed data? Pass a `transform` to `norm.object()`:
+
+```ts
+export const Product = norm.object({
+  title: n.title(),
+  price: n.number({ property: "Price" }),
+  currency: n.richText({ property: "Currency" }).default("USD"),
+}, {
+  transform: (data) => ({
+    ...data,
+    displayPrice: `${data.currency} ${data.price?.toFixed(2) ?? "0.00"}`,
+  }),
+});
+
+type ProductModel = n.getType<typeof Product>;
+// Includes: { ...; displayPrice: string }
+```
+
+The transform runs after Zod parsing and extraction, so `data` already has all Notion fields resolved.
+
+---
+
+## Low-level API
+
+If you need more control, `NormClient` exposes the raw Notion operations:
+
+```ts
+// Query a database directly
+const { results } = await norm.queryDatabase("ds_abc123", {
+  filter: { /* Notion filter */ },
+  filterProperties: ["Name", "Price"],
+});
+
+// Get a page by ID
+const page = await norm.getPageById("abc123", {
+  filterProperties: ["Name", "Price"],
+});
+
+// Get page markdown
+const md = await norm.getPageMarkdown("abc123");
+
+// Retrieve + parse with any Zod schema (not just norm models)
+const data = await norm.retrievePage(pageId, someZodSchema);
+
+// Upload a file
+const fileId = await norm.uploadFile({
+  filename: "report.pdf",
+  contentType: "application/pdf",
+  data: buffer,
+});
+
+// Append file blocks to a page
+await norm.appendFileBlocks(pageId, [
+  { fileUploadId: fileId, filename: "report.pdf", blockType: "file" },
+]);
+```
 
 ---
 
@@ -130,41 +355,26 @@ All properties are optional. Rollup/derived/id/markdown fields are excluded from
 
 ### `n.*` builders
 
-All return Zod schemas registered with `notionRegistry`, branded at the type level with `{ extractor, property }` for `norm.object` to compute `CreateProps`.
+All return Zod schemas registered with `notionRegistry`, branded at the type level so `norm.object` can compute the create-props type.
 
-| Builder | Returns | Extractor | Creatable | Simplified input |
-|---|---|---|---|---|
-| `n.id()` | `z.string()` | — (special-cased) | No | — |
-| `n.title({ property? })` | `z.string()` | `title` | Yes | `string` |
-| `n.richText({ property })` | `z.string()` | `richText` | Yes | `string` |
-| `n.number({ property })` | `z.number().nullable()` | `number` | Yes | `number \| null` |
-| `n.checkbox({ property })` | `z.boolean()` | `checkbox` | Yes | `boolean` |
-| `n.url({ property })` | `z.string().nullable()` | `url` | Yes | `string \| null` |
-| `n.email({ property })` | `z.string()` | `email` | Yes | `string` |
-| `n.date({ property })` | `z.date().nullable()` | `date` | Yes | `Date \| string \| null` |
-| `n.multiSelect({ property })` | `z.array(z.string())` | `multiSelect` | Yes | `string[]` |
-| `n.select({ property, enum?, fallback? })` | `z.enum([...])` or `z.string().nullable()` | `select` | Yes | `string` (enum member) or `string \| null` |
-| `n.relation({ property, single? })` | `z.array(z.string()).transform(...)` | `relationIds` | Yes | `string[]` |
-| `n.rollupText({ property })` | `z.string()` | `rollupText` | No | — |
-| `n.rollupRelation({ property })` | `z.array(z.string())` | `rollupRelationIds` | No | — |
-| `n.pageIcon()` | `z.string().nullable()` | `pageIcon` | No | — |
-| `n.derived<T, Args = void>(key)` | `z.custom<T>()` | — (flagged `derived: true`) | No | — |
-| `n.markdown()` | `z.string().optional()` | — (special-cased) | No | — |
-
-#### `n.select` semantics
-
-- `enum` required for typed selects → `z.enum([...])`
-- `fallback` optional; **defaults to the first `enum` option** if not specified
-- `fallback` applies via `.transform(v => v ?? fallback)`
-- Without `enum`: untyped → `z.string().nullable()`, no fallback transform
-
-### `n.getType<typeof Model>`
-
-Type alias that extracts the model's output type (post-transform if `transform` option provided):
-
-```ts
-type getType<M> = M extends NormModel<infer T, any, any> ? T : never;
-```
+| Builder | Returns | Creatable | Simplified input |
+|---|---|---|---|
+| `n.id()` | `z.string()` | No | — |
+| `n.title({ property? })` | `z.string()` | Yes | `string` |
+| `n.richText({ property })` | `z.string()` | Yes | `string` |
+| `n.number({ property })` | `z.number().nullable()` | Yes | `number \| null` |
+| `n.checkbox({ property })` | `z.boolean()` | Yes | `boolean` |
+| `n.url({ property })` | `z.string().nullable()` | Yes | `string \| null` |
+| `n.email({ property })` | `z.string()` | Yes | `string` |
+| `n.date({ property })` | `z.date().nullable()` | Yes | `Date \| string \| null` |
+| `n.multiSelect({ property })` | `z.array(z.string())` | Yes | `string[]` |
+| `n.select({ property, enum?, fallback? })` | `z.enum([...])` or `z.string().nullable()` | Yes | `string` or `string \| null` |
+| `n.relation({ property, single? })` | `z.array(z.string()).transform(...)` | Yes | `string[]` |
+| `n.rollupText({ property })` | `z.string()` | No | — |
+| `n.rollupRelation({ property })` | `z.array(z.string())` | No | — |
+| `n.pageIcon()` | `z.string().nullable()` | No | — |
+| `n.derived<T, Args = void>(key)` | `z.custom<T>()` | No | — |
+| `n.markdown()` | `z.string().optional()` | No | — |
 
 ### `NormClient`
 
@@ -172,26 +382,56 @@ type getType<M> = M extends NormModel<infer T, any, any> ? T : never;
 class NormClient {
   constructor(config: NormConfig);
 
-  // Low-level Notion ops (framework-agnostic)
-  queryDatabase(dataSourceId: string, opts: QueryOpts): Promise<{ results: PageObjectResponse[] }>;
-  getPageById(pageId: string, opts?: { filterProperties?: string[] }): Promise<PageObjectResponse | null>;
+  // Model factory
+  object<T extends ZodRawShape>(shape: T, opts?: {
+    transform?: (data: z.infer<ZodObject<T>>) => unknown;
+  }): NormModel<...>;
+
+  // Low-level Notion ops
+  queryDatabase(dataSourceId: string, opts: {
+    filter?: Record<string, unknown>;
+    sorts?: Array<Record<string, unknown>>;
+    filterProperties?: string[];
+  }): Promise<{ results: PageObjectResponse[] }>;
+
+  getPageById(pageId: string, opts?: {
+    filterProperties?: string[];
+  }): Promise<PageObjectResponse | null>;
+
   getPageMarkdown(pageId: string): Promise<string>;
-  uploadFile(file: { filename: string; contentType: string; data: Buffer }): Promise<string | null>;
-  appendFileBlocks(pageId: string, attachments: Attachment[]): Promise<boolean>;
-  createPage(input: CreatePageInput): Promise<string | null>;
 
-  // Retriever (generic)
-  retrievePage<T>(pageId: string, schema: ZodType<T>, opts?: RetrieveOptions): Promise<T | null>;
-  retrieveFromPage<T>(page: PageObjectResponse, schema: ZodType<T>, opts?: RetrieveOptions): Promise<T>;
+  createPage(input: {
+    parent: Record<string, unknown>;
+    properties: Record<string, unknown>;
+    markdown?: string;
+  }): Promise<string | null>;
 
-  // Model factory — auto-injects id: n.id() if not present
-  object<T extends ZodRawShape>(shape: T, opts?: { transform?: (data: RawShape<T>) => unknown }): NormModel<...>;
+  uploadFile(file: {
+    filename: string;
+    contentType: string;
+    data: Buffer;
+  }): Promise<string | null>;
+
+  appendFileBlocks(pageId: string, attachments: {
+    fileUploadId: string;
+    filename?: string;
+    blockType: string;
+  }[]): Promise<boolean>;
+
+  // Generic parse (works with any Zod schema, not just norm models)
+  retrievePage<T>(pageId: string, schema: ZodType<T>, opts?: {
+    includeMarkdown?: boolean;
+  }): Promise<T | null>;
+
+  retrieveFromPage<T>(page: PageObjectResponse, schema: ZodType<T>, opts?: {
+    includeMarkdown?: boolean;
+  }): Promise<T>;
 }
 
 interface NormConfig {
   client: Client;
-  onWarn?: (msg: string, ctx: object) => void;
-  onError?: (err: Error, ctx: object) => void;
+  onWarn?: (msg: string, ctx: Record<string, unknown>) => void;
+  onError?: (err: Error, ctx: Record<string, unknown>) => void;
 }
 ```
 
@@ -199,59 +439,155 @@ interface NormConfig {
 
 ```ts
 interface NormModel<T, CreateProps, Args> {
-  readonly propertyNames: readonly string[];   // collected from n.* brands, excludes id/markdown/derived
+  /** The underlying Zod schema. */
+  readonly schema: ZodType<T>;
+  /** Notion property names (excludes id/markdown/derived). Used for filter_properties. */
+  readonly propertyNames: readonly string[];
+
+  /** Parse arbitrary data through the schema. */
   parse(data: unknown): T;
+
+  /** Fetch a single page, extract properties, and parse. */
   retrieve(pageId: string, opts?: {
-    args?: Args;
-    derived?: DerivedResolver<Args>;
     includeMarkdown?: boolean;
   }): Promise<T | null>;
-  parsePage(page: PageObjectResponse, opts?: { ... }): Promise<T>;
+
+  /** Parse an already-fetched PageObjectResponse. */
+  parsePage(page: PageObjectResponse, opts?: {
+    includeMarkdown?: boolean;
+  }): Promise<T>;
+
+  /** Query a Notion database. Automatically sets filter_properties. */
+  query(databaseId: string, opts?: {
+    filter?: Record<string, unknown>;
+    sorts?: Array<Record<string, unknown>>;
+    includeMarkdown?: boolean;
+  }): Promise<T[]>;
+
+  /** Create a page with simplified property values. */
   create(input: {
-    parent: PageParent;
-    properties: CreateProps;     // simplified shape, Notion property names as keys, all optional
+    parent: Record<string, unknown>;
+    properties: Partial<CreateProps>;
     markdown?: string;
   }): Promise<string | null>;
-  query(databaseId: string, opts?: QueryOpts<Args>): Promise<T[]>;
 }
 ```
 
-### `DerivedResolver<Args>`
+### `n.getType<typeof Model>`
+
+Extracts the model's output type (post-transform if `transform` option provided):
 
 ```ts
-type DerivedResolver<Args> = (ctx: {
-  key: string;
-  args?: Args;
-  page: PageObjectResponse;
-}) => Promise<unknown | undefined>;
+type getType<M> = M extends { readonly _normType: infer T } ? T : never;
 ```
-
-Retriever calls resolver once per `n.derived` field. `undefined` return → field falls back to schema `.default()`/`.optional()`. Host writes a `switch`/`if` chain on `key`.
 
 ---
 
 ## Auto `filter_properties`
 
-`norm` automatically requests only the properties declared in the schema:
+norm automatically requests only the properties declared in the schema:
 
-1. **`Lesson.retrieve(pageId, opts)`** — calls `getPageById(pageId, { filterProperties: Lesson.propertyNames })`
-2. **`Lesson.query(databaseId, opts)`** — calls `queryDatabase(databaseId, { filter, sorts, filterProperties: Lesson.propertyNames })`
+1. **`Model.retrieve(pageId)`** — calls `getPageById` with `filterProperties: Model.propertyNames`
+2. **`Model.query(databaseId)`** — calls `queryDatabase` with `filterProperties: Model.propertyNames`
 
-`Lesson.propertyNames` excludes `id` (always returned by Notion), `markdownContent` (fetched separately via `getPageMarkdown`), and `n.derived` fields (not Notion properties).
+`Model.propertyNames` excludes `id` (always returned by Notion), `markdownContent` (fetched separately), and derived fields (not Notion properties).
 
-Filters still work normally — Notion's `filter` (which pages match) is independent of `filter_properties` (which property values come back). Hosts can filter on properties NOT in the schema (e.g. `published: true`); the filter operates server-side, the property just isn't returned on each page.
+Filters still work on any property — Notion's `filter` (which pages match) is independent of `filter_properties` (which values are returned). You can filter on properties NOT in the schema (e.g. `published: true`); the filter runs server-side, the property just isn't returned per-page.
+
+This means **your API responses are as slim as possible** with zero effort.
+
+---
+
+## Examples
+
+### Blog with categories
+
+```ts
+export const BlogPost = norm.object({
+  title: n.title(),
+  slug: n.richText({ property: "Slug" }),
+  publishedAt: n.date({ property: "Published At" }),
+  tags: n.multiSelect({ property: "Tags" }),
+  category: n.select({
+    property: "Category",
+    enum: ["tech", "design", "business"],
+  }),
+  featured: n.checkbox({ property: "Featured" }),
+  readTime: n.number({ property: "Read Time" }),
+  // Rollup: author name from a related "Authors" database
+  authorName: n.rollupText({ property: "Author Name" }),
+});
+
+// Fetch published tech posts
+const posts = await BlogPost.query("ds_blog", {
+  filter: {
+    and: [
+      { property: "Category", select: { equals: "tech" } },
+      { property: "Featured", checkbox: { equals: true } },
+    ],
+  },
+  sorts: [{ property: "Published At", direction: "descending" }],
+});
+```
+
+### Task tracker with computed urgency
+
+```ts
+export const Task = norm.object({
+  title: n.title(),
+  dueDate: n.date({ property: "Due Date" }),
+  priority: n.select({
+    property: "Priority",
+    enum: ["low", "medium", "high", "critical"],
+  }),
+  assignee: n.relation({ property: "Assignee", single: true }),
+  status: n.select({
+    property: "Status",
+    enum: ["todo", "in_progress", "done"],
+  }).default("todo"),
+  isUrgent: n.derived<boolean>("isUrgent").default(false),
+});
+
+// Task.retrieve with derived urgency
+const task = await Task.retrieve(taskId, {
+  derived: async ({ key, page }) => {
+    if (key === "isUrgent") {
+      return checkUrgency(page.id);
+    }
+    return undefined;
+  },
+});
+```
+
+### Product catalog with transformed display price
+
+```ts
+export const Product = norm.object({
+  title: n.title(),
+  price: n.number({ property: "Price" }),
+  currency: n.richText({ property: "Currency" }).default("USD"),
+}, {
+  transform: (data) => ({
+    ...data,
+    displayPrice: `${data.currency} $${data.price?.toFixed(2) ?? "0.00"}`,
+    isFree: data.price === null || data.price === 0,
+  }),
+});
+
+// displayPrice and isFree are available on the model output
+```
 
 ---
 
 ## Design principles
 
-1. **Framework-agnostic** — no Next.js, no Sentry, no env. Caching stays in the host (wrap call sites with `"use cache"; cacheLife(...)` if using Next).
-2. **Schema definition is pure** — `n.*` builders touch only the global `notionRegistry` (metadata). No client needed to define a model.
-3. **Data access is bound** — `norm.object(...)` binds the schema to a `NormClient` instance. `Lesson.retrieve(...)` / `Lesson.create(...)` / `Lesson.query(...)` work without re-passing the client.
-4. **LMS/business logic stays in the host** — `norm` knows nothing about `isCompleted`, `score`, `content_type`, progress tracking, or LMS rules. Derived fields are resolved by a host-supplied hook.
-5. **Type safety end-to-end** — `n.getType<typeof Lesson>` for the output type; `CreateProps` for the create input (typos and wrong types are compile errors); `Args` inferred from derived fields.
-6. **Auto-optimization** — `filter_properties` is injected automatically from the schema's property names, so Notion responses are as slim as possible.
-7. **OOP client** — instantiate `NormClient` once with config, export it, all callers reuse it. No per-call config.
+1. **Framework-agnostic** — No Next.js, no Sentry, no environment assumptions. Bring your own `@notionhq/client`. Use it with any framework or none.
+2. **Schema definition is pure** — `n.*` builders only register metadata in a global registry. No client needed to define a model; models can be exported from shared packages.
+3. **Data access is bound** — `norm.object(...)` binds the schema to a `NormClient` instance. `Model.retrieve()` / `.create()` / `.query()` work without re-passing the client.
+4. **Business logic stays in the host** — `norm` knows nothing about your domain. Computed values live in the `derived` resolver you supply. The library handles Notion; you handle your app.
+5. **Type safety end-to-end** — Output types via `n.getType<typeof Model>`, create input types enforce property names and value types, derived field args flow from call site to resolver. Typos are compile errors.
+6. **Auto-optimization** — `filter_properties` is injected automatically from the schema's property names. Notion responses are as slim as possible, zero config.
+7. **OOP client** — Instantiate `NormClient` once with config, export it, all callers reuse it. No per-call configuration.
 
 ---
 
@@ -265,7 +601,7 @@ pnpm lint        # ESLint flat config
 ```
 
 - **Build**: `tsdown` (ESM + DTS, zero-config)
-- **Test**: Vitest with ported Notion ground-truth fixtures
+- **Test**: Vitest with Notion ground-truth fixtures
 - **Node**: `>=24`
 - **Peer deps**: `zod@^4`, `@notionhq/client@^5`
 

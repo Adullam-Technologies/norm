@@ -13,11 +13,11 @@ export interface NormConfig {
   onError?: (err: Error, ctx: Record<string, unknown>) => void;
 }
 
-export interface RetrieveOptions<Args = unknown> {
+export interface RetrieveOptions {
   includeMarkdown?: boolean;
 }
 
-export interface QueryOpts<Args = unknown> extends RetrieveOptions<Args> {
+export interface QueryOpts extends RetrieveOptions {
   filter?: Record<string, unknown>;
   sorts?: Array<Record<string, unknown>>;
 }

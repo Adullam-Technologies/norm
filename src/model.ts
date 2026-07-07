@@ -5,7 +5,7 @@ import type { RetrieveOptions, QueryOpts } from "./types";
 import { getNotionMeta } from "./retriever";
 import { id as makeIdBuilder } from "./builders";
 
-export interface NormModel<T, CreateProps, Args> {
+export interface NormModel<T, CreateProps> {
   /** Marker for `n.getType` — holds the output type at the type level. */
   readonly _normType: T;
   /** The underlying Zod schema. Rarely needed directly; prefer `.parse()`/`.retrieve()`. */
@@ -13,14 +13,14 @@ export interface NormModel<T, CreateProps, Args> {
   /** Notion property names declared in the schema (excludes id/markdown/icon). */
   readonly propertyNames: readonly string[];
   parse(data: unknown): T;
-  retrieve(pageId: string, opts?: RetrieveOptions<Args>): Promise<T | null>;
-  parsePage(page: PageObjectResponse, opts?: RetrieveOptions<Args>): Promise<T>;
+  retrieve(pageId: string, opts?: RetrieveOptions): Promise<T | null>;
+  parsePage(page: PageObjectResponse, opts?: RetrieveOptions): Promise<T>;
   create(input: {
     parent: Record<string, unknown>;
     properties: CreateProps;
     markdown?: string;
   }): Promise<string | null>;
-  query(databaseId: string, opts?: QueryOpts<Args>): Promise<T[]>;
+  query(databaseId: string, opts?: QueryOpts): Promise<T[]>;
 }
 
 import type { PageObjectResponse } from "@notionhq/client/build/src/api-endpoints";
@@ -64,13 +64,13 @@ function translateProperty(extractor: string, value: unknown): unknown {
 
 // ─── norm.object implementation ──────────────────────────────────────────────
 
-export function defineObject<TShape extends ZodRawShape, TArgs = void>(
+export function defineObject<TShape extends ZodRawShape>(
   client: NormClient,
   shape: TShape,
   opts?: {
     transform?: (data: z.infer<ZodObject<TShape>>) => unknown;
   },
-): NormModel<unknown, unknown, TArgs> {
+): NormModel<unknown, unknown> {
   // Auto-inject id: n.id() if not present
   const finalShape: ZodRawShape =
     "id" in shape ? shape : { id: makeIdField(), ...shape };
@@ -85,7 +85,7 @@ export function defineObject<TShape extends ZodRawShape, TArgs = void>(
   // Collect property names for filter_properties
   const propertyNames = collectPropertyNames(finalShape);
 
-  const self: NormModel<unknown, unknown, unknown> = {
+  const self: NormModel<unknown, unknown> = {
     _normType: undefined as unknown,
     schema: schema as ZodType<unknown>,
     propertyNames,
