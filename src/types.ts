@@ -5,8 +5,16 @@ export type { PageObjectResponse } from "@notionhq/client/build/src/api-endpoint
 export type { ExtractorType, NotionFieldMeta } from "./registry";
 
 export interface NormConfig {
-  /** The @notionhq/client Client instance. */
-  client: import("@notionhq/client").Client;
+  /**
+   * The @notionhq/client Client instance, or a factory that returns one.
+   * A factory enables lazy-loading: the Client is created on the first
+   * Notion API call rather than at construction time.
+   */
+  client:
+    | import("@notionhq/client").Client
+    | (() =>
+        | import("@notionhq/client").Client
+        | Promise<import("@notionhq/client").Client>);
   /** Called for recoverable warnings (e.g. missing extractor for a field). */
   onWarn?: (msg: string, ctx: Record<string, unknown>) => void;
   /** Called when a Notion API call throws. Host should log/capture. */

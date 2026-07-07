@@ -256,3 +256,89 @@ describe("NormClient", () => {
     });
   });
 });
+
+describe("factory (lazy client)", () => {
+  let mockClient: ReturnType<typeof makeMockClient>;
+
+  beforeEach(() => {
+    mockClient = makeMockClient();
+  });
+
+  it("works with a sync factory function", async () => {
+    const factory = vi.fn(() => mockClient as unknown as NormConfig["client"]);
+    const norm = new NormClient({
+      client: factory as unknown as NormConfig["client"],
+      onWarn: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    mockClient.dataSources.query.mockResolvedValue({ results: [{ id: "p1" }] });
+    const result = await norm.queryDatabase("ds_123");
+
+    expect(result.results).toHaveLength(1);
+    expect(factory).toHaveBeenCalledTimes(1);
+  });
+
+  it("works with an async factory function", async () => {
+    const factory = vi.fn(
+      () => Promise.resolve(mockClient) as Promise<NormConfig["client"]>,
+    );
+    const norm = new NormClient({
+      client: factory as unknown as NormConfig["client"],
+      onWarn: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    mockClient.dataSources.query.mockResolvedValue({ results: [{ id: "p1" }] });
+    const result = await norm.queryDatabase("ds_123");
+
+    expect(result.results).toHaveLength(1);
+    expect(factory).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls the factory only once for concurrent calls", async () => {
+    let resolveClient!: (c: ReturnType<typeof makeMockClient>) => void;
+    const factory = vi.fn(
+      () =>
+        new Promise<ReturnType<typeof makeMockClient>>((resolve) => {
+          resolveClient = resolve;
+        }),
+    );
+
+    const norm = new NormClient({
+      client: factory as unknown as NormConfig["client"],
+      onWarn: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    // Fire two concurrent requests
+    const promise1 = norm.queryDatabase("ds_123");
+    const promise2 = norm.queryDatabase("ds_456");
+
+    // Resolve the factory once
+    resolveClient(mockClient);
+    mockClient.dataSources.query.mockResolvedValue({ results: [] });
+
+    await Promise.all([promise1, promise2]);
+
+    expect(factory).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls onError when the factory throws", async () => {
+    const onError = vi.fn();
+    const factory = () => Promise.reject(new Error("auth failed"));
+
+    const norm = new NormClient({
+      client: factory as unknown as NormConfig["client"],
+      onWarn: vi.fn(),
+      onError,
+    });
+
+    const result = await norm.queryDatabase("ds_123");
+
+    expect(result.results).toEqual([]);
+    expect(onError).toHaveBeenCalledWith(expect.any(Error), {
+      dataSourceId: "ds_123",
+    });
+  });
+});
