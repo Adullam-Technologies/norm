@@ -142,6 +142,44 @@ describe("retriever", () => {
 
       expect(result.markdownContent).toBeUndefined();
     });
+
+    it("assigns markdown to the user's chosen field name, not a hardcoded 'markdownContent'", async () => {
+      const customSchema = z.object({
+        id: n.id(),
+        title: n.title(),
+        body: n.markdown().optional(),
+      });
+
+      const page = lessons["lesson-1"]!;
+      const result = await retrieveFromPage(
+        page,
+        customSchema,
+        { includeMarkdown: true },
+        {
+          getPageMarkdown: async () => "# Custom Body Content",
+        },
+      );
+
+      expect(result.body).toBe("# Custom Body Content");
+      // The old behavior hardcoded "markdownContent"; ensure it's not set
+      expect(
+        (result as Record<string, unknown>).markdownContent,
+      ).toBeUndefined();
+    });
+
+    it("still assigns markdown correctly when field is named 'markdownContent'", async () => {
+      const page = lessons["lesson-1"]!;
+      const result = await retrieveFromPage(
+        page,
+        schema,
+        { includeMarkdown: true },
+        {
+          getPageMarkdown: async () => "# Hello World",
+        },
+      );
+
+      expect(result.markdownContent).toBe("# Hello World");
+    });
   });
 
   describe("retrieveFromPage with students (email + rollupRelation)", () => {
