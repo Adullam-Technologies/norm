@@ -153,6 +153,27 @@ Called once, cached, concurrent requests deduplicated.
 
 ---
 
+## Skip markdown fetch
+
+Models with `n.markdown()` automatically fetch page content on every read. If you don't need it, pass `doNotIncludeMarkdown` to skip the extra API call:
+
+```ts
+const Article = norm.object({
+  title: n.title(),
+  body: n.markdown(),
+});
+
+// Fetches markdown (default)
+const article = await Article.retrieve("page-id");
+
+// Skips the markdown fetch — faster
+const article = await Article.retrieve("page-id", {
+  doNotIncludeMarkdown: true,
+});
+```
+
+---
+
 ## API
 
 ### Builders (`n.*`)
