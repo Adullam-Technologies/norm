@@ -1,4 +1,7 @@
-import type { PageObjectResponse } from "@notionhq/client/build/src/api-endpoints";
+import type {
+  PageObjectResponse,
+  QueryDataSourceParameters,
+} from "@notionhq/client/build/src/api-endpoints";
 import type { ExtractorType } from "./registry";
 
 export type { PageObjectResponse } from "@notionhq/client/build/src/api-endpoints";
@@ -22,12 +25,12 @@ export interface NormConfig {
 }
 
 export interface RetrieveOptions {
-  includeMarkdown?: boolean;
+  doNotIncludeMarkdown?: boolean;
 }
 
 export interface QueryOpts extends RetrieveOptions {
-  filter?: Record<string, unknown>;
-  sorts?: Array<Record<string, unknown>>;
+  filter?: QueryDataSourceParameters["filter"];
+  sorts?: QueryDataSourceParameters["sorts"];
 }
 
 export interface QueryDatabaseResult {

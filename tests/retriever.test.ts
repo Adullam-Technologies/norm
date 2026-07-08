@@ -113,14 +113,12 @@ describe("retriever", () => {
       markdownContent: n.markdown().optional(),
     });
 
-    it("fetches markdown when includeMarkdown=true", async () => {
+    it("fetches markdown automatically", async () => {
       const page = lessons["lesson-1"]!;
       const result = await retrieveFromPage(
         page,
         schema,
-        {
-          includeMarkdown: true,
-        },
+        {},
         {
           getPageMarkdown: async () => "# Hello World",
         },
@@ -129,12 +127,12 @@ describe("retriever", () => {
       expect(result.markdownContent).toBe("# Hello World");
     });
 
-    it("does not fetch markdown when includeMarkdown not set", async () => {
+    it("does not fetch markdown when doNotIncludeMarkdown is set", async () => {
       const page = lessons["lesson-1"]!;
       const result = await retrieveFromPage(
         page,
         schema,
-        {},
+        { doNotIncludeMarkdown: true },
         {
           getPageMarkdown: async () => "should not be called",
         },
@@ -154,7 +152,7 @@ describe("retriever", () => {
       const result = await retrieveFromPage(
         page,
         customSchema,
-        { includeMarkdown: true },
+        {},
         {
           getPageMarkdown: async () => "# Custom Body Content",
         },
@@ -172,7 +170,7 @@ describe("retriever", () => {
       const result = await retrieveFromPage(
         page,
         schema,
-        { includeMarkdown: true },
+        {},
         {
           getPageMarkdown: async () => "# Hello World",
         },

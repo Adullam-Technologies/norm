@@ -122,7 +122,7 @@ export async function retrieveFromPage<T extends ZodType>(
     // Handle page fetching
     if (
       meta?.extractor === "markdown" &&
-      options?.includeMarkdown &&
+      options?.doNotIncludeMarkdown !== true &&
       fnOpts?.getPageMarkdown
     ) {
       result[key] = await fnOpts.getPageMarkdown(page.id);

@@ -124,8 +124,8 @@ export function defineObject<TShape extends ZodRawShape>(
     },
     async query(databaseId, queryOpts) {
       const { results } = await client.queryDatabase(databaseId, {
-        filter: queryOpts?.filter as never,
-        sorts: queryOpts?.sorts as never,
+        filter: queryOpts?.filter,
+        sorts: queryOpts?.sorts,
         filterProperties: [...propertyNames],
       });
       return Promise.all(
