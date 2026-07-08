@@ -119,8 +119,13 @@ export async function retrieveFromPage<T extends ZodType>(
       continue;
     }
 
-    // Special-case: markdown content fetched separately
-    if (meta?.extractor === "markdown") {
+    // Handle page fetching
+    if (
+      meta?.extractor === "markdown" &&
+      options?.includeMarkdown &&
+      fnOpts?.getPageMarkdown
+    ) {
+      result[key] = await fnOpts.getPageMarkdown(page.id);
       continue;
     }
 
@@ -130,10 +135,6 @@ export async function retrieveFromPage<T extends ZodType>(
     }
 
     result[key] = extractField(page, key, meta);
-  }
-
-  if (options?.includeMarkdown && fnOpts?.getPageMarkdown) {
-    result.markdownContent = await fnOpts.getPageMarkdown(page.id);
   }
 
   return schema.parse(result) as z.infer<T>;
