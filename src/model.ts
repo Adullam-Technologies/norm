@@ -24,7 +24,7 @@ export interface NormModel<T, CreateProps> {
   iteratedQuery(
     databaseId: string,
     opts?: QueryOpts,
-  ): AsyncGenerator<T[], number, never>;
+  ): AsyncGenerator<T[], number, void>;
 }
 
 import type { PageObjectResponse } from "@notionhq/client/build/src/api-endpoints";
