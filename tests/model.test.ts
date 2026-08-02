@@ -172,6 +172,163 @@ describe("norm.object (model factory)", () => {
     });
   });
 
+  describe("iteratedQuery", () => {
+    it("yields a single batch when no pagination needed", async () => {
+      mockClient.dataSources.query.mockResolvedValue({
+        results: [lessons["lesson-1"]!, lessons["lesson-2"]!],
+        has_more: false,
+        next_cursor: null,
+      });
+      mockClient.pages.retrieveMarkdown.mockResolvedValue({ markdown: "" });
+
+      const Model = norm.object({
+        title: n.title(),
+        order: n.number({ property: "order" }),
+      });
+
+      const batches: unknown[][] = [];
+      for await (const batch of Model.iteratedQuery("ds_lessons")) {
+        batches.push(batch);
+      }
+
+      expect(batches).toHaveLength(1);
+      expect(batches[0]).toHaveLength(2);
+      expect((batches[0]![0] as { title: string }).title).toBe(
+        "Getting Started",
+      );
+      expect((batches[0]![1] as { title: string }).title).toBe("Core Concepts");
+      expect(mockClient.dataSources.query).toHaveBeenCalledTimes(1);
+      expect(mockClient.dataSources.query).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data_source_id: "ds_lessons",
+          filter_properties: ["title", "order"],
+        }),
+      );
+    });
+
+    it("paginates through multiple pages via cursor", async () => {
+      mockClient.dataSources.query
+        .mockResolvedValueOnce({
+          results: [lessons["lesson-1"]!],
+          has_more: true,
+          next_cursor: "cursor-abc",
+        })
+        .mockResolvedValueOnce({
+          results: [lessons["lesson-2"]!],
+          has_more: false,
+          next_cursor: null,
+        });
+      mockClient.pages.retrieveMarkdown.mockResolvedValue({ markdown: "" });
+
+      const Model = norm.object({
+        title: n.title(),
+        order: n.number({ property: "order" }),
+      });
+
+      const batches: unknown[][] = [];
+      for await (const batch of Model.iteratedQuery("ds_lessons")) {
+        batches.push(batch);
+      }
+
+      expect(batches).toHaveLength(2);
+      expect((batches[0]![0] as { title: string }).title).toBe(
+        "Getting Started",
+      );
+      expect((batches[1]![0] as { title: string }).title).toBe("Core Concepts");
+
+      // Second call should use the cursor
+      expect(mockClient.dataSources.query).toHaveBeenCalledTimes(2);
+      expect(mockClient.dataSources.query).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          start_cursor: "cursor-abc",
+        }),
+      );
+    });
+
+    it("passes filter and sorts through to query", async () => {
+      mockClient.dataSources.query.mockResolvedValue({
+        results: [lessons["lesson-1"]!],
+        has_more: false,
+        next_cursor: null,
+      });
+      mockClient.pages.retrieveMarkdown.mockResolvedValue({ markdown: "" });
+
+      const Model = norm.object({
+        title: n.title(),
+        order: n.number({ property: "order" }),
+      });
+
+      const filter = {
+        property: "published",
+        checkbox: { equals: true },
+      };
+      const sorts = [{ property: "order", direction: "ascending" as const }];
+
+      const batches: unknown[][] = [];
+      for await (const batch of Model.iteratedQuery("ds_lessons", {
+        filter,
+        sorts,
+      })) {
+        batches.push(batch);
+      }
+
+      expect(mockClient.dataSources.query).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data_source_id: "ds_lessons",
+          filter,
+          sorts,
+          filter_properties: ["title", "order"],
+        }),
+      );
+      expect(batches).toHaveLength(1);
+    });
+
+    it("yields one empty batch for empty results", async () => {
+      mockClient.dataSources.query.mockResolvedValue({
+        results: [],
+        has_more: false,
+        next_cursor: null,
+      });
+
+      const Model = norm.object({
+        title: n.title(),
+      });
+
+      const batches: unknown[][] = [];
+      for await (const batch of Model.iteratedQuery("ds_lessons")) {
+        batches.push(batch);
+      }
+
+      expect(batches).toHaveLength(1);
+      expect(batches[0]).toHaveLength(0);
+      expect(mockClient.dataSources.query).toHaveBeenCalledTimes(1);
+    });
+
+    it("sends empty startCursor on first call", async () => {
+      mockClient.dataSources.query.mockResolvedValue({
+        results: [lessons["lesson-1"]!],
+        has_more: false,
+        next_cursor: null,
+      });
+      mockClient.pages.retrieveMarkdown.mockResolvedValue({ markdown: "" });
+
+      const Model = norm.object({
+        title: n.title(),
+      });
+
+      for await (const _batch of Model.iteratedQuery("ds_lessons")) {
+        void _batch;
+      }
+
+      expect(mockClient.dataSources.query).toHaveBeenCalledWith(
+        expect.objectContaining({
+          start_cursor: undefined,
+        }),
+      );
+    });
+  });
+
   describe("create", () => {
     it("translates simplified properties to Notion format and calls createPage", async () => {
       mockClient.pages.create.mockResolvedValue({ id: "new-page-1" });

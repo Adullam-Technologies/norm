@@ -21,6 +21,10 @@ export interface NormModel<T, CreateProps> {
     markdown?: string;
   }): Promise<string | null>;
   query(databaseId: string, opts?: QueryOpts): Promise<T[]>;
+  iteratedQuery(
+    databaseId: string,
+    opts?: QueryOpts,
+  ): AsyncGenerator<T[], number, void>;
 }
 
 import type { PageObjectResponse } from "@notionhq/client/build/src/api-endpoints";
@@ -127,6 +131,8 @@ export function defineObject<TShape extends ZodRawShape>(
         filter: queryOpts?.filter,
         sorts: queryOpts?.sorts,
         filterProperties: [...propertyNames],
+        pageSize: queryOpts?.pageSize,
+        startCursor: queryOpts?.startCursor,
       });
       return Promise.all(
         results.map((page) =>
@@ -138,9 +144,39 @@ export function defineObject<TShape extends ZodRawShape>(
         ),
       );
     },
+    async *iteratedQuery(databaseId, queryOpts) {
+      let nextCursor: string | undefined;
+      let pageCount = 0;
+
+      do {
+        const response = await client.queryDatabase(databaseId, {
+          filter: queryOpts?.filter,
+          sorts: queryOpts?.sorts,
+          filterProperties: [...propertyNames],
+          startCursor: nextCursor,
+        });
+
+        nextCursor = response.nextCursor;
+        pageCount += response.pageSize;
+
+        yield Promise.all(
+          response.results.map((page) =>
+            client.retrieveFromPage(
+              page,
+              schema as ZodType<unknown>,
+              queryOpts as RetrieveOptions,
+            ),
+          ),
+        );
+
+        if (response.pageSize <= 0) break;
+      } while (nextCursor);
+
+      return pageCount;
+    },
   };
 
-  return self as never;
+  return self;
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────

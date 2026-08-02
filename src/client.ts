@@ -49,7 +49,7 @@ export class NormClient {
    * lazy-loading was configured. The factory is invoked at most once;
    * concurrent calls are deduplicated.
    */
-  private async getClient(): Promise<Client> {
+  async getNotion(): Promise<Client> {
     if (this._client) return this._client;
     if (!this._clientPromise) {
       this._clientPromise = Promise.resolve(this._clientFactory!()).then(
@@ -68,20 +68,29 @@ export class NormClient {
       filter?: QueryDataSourceParameters["filter"];
       sorts?: QueryDataSourceParameters["sorts"];
       filterProperties?: string[];
-    } = {},
+      pageSize?: number;
+      startCursor?: string;
+    } = { pageSize: 100 },
   ): Promise<QueryDatabaseResult> {
     try {
-      const client = await this.getClient();
+      const client = await this.getNotion();
       const response = await client.dataSources.query({
         data_source_id: dataSourceId,
         filter: opts.filter,
         sorts: opts.sorts,
         filter_properties: opts.filterProperties,
+        page_size: opts.pageSize,
+        start_cursor: opts.startCursor,
       });
-      return { results: response.results as PageObjectResponse[] };
+      return {
+        results: response.results as PageObjectResponse[],
+        pageSize: response.results.length,
+        hasMore: response.has_more,
+        nextCursor: response.next_cursor ?? undefined,
+      };
     } catch (error) {
       this.onError?.(error as Error, { dataSourceId });
-      return { results: [] };
+      return { results: [], pageSize: 0 };
     }
   }
 
@@ -94,7 +103,7 @@ export class NormClient {
         page_id: pageId,
         filter_properties: opts?.filterProperties,
       };
-      const client = await this.getClient();
+      const client = await this.getNotion();
       const response = await client.pages.retrieve(params);
       if (!response || !("properties" in response)) {
         this.onWarn?.("Page retrieved has no properties", { pageId });
@@ -109,7 +118,7 @@ export class NormClient {
 
   async getPageMarkdown(pageId: string): Promise<string> {
     try {
-      const client = await this.getClient();
+      const client = await this.getNotion();
       const response = await client.pages.retrieveMarkdown({
         page_id: pageId,
       });
@@ -122,7 +131,7 @@ export class NormClient {
 
   async createPage(input: CreatePageInput): Promise<string | null> {
     try {
-      const client = await this.getClient();
+      const client = await this.getNotion();
       const response = await client.pages.create({
         parent: input.parent as CreatePageParameters["parent"],
         properties: input.properties as CreatePageParameters["properties"],
@@ -141,7 +150,7 @@ export class NormClient {
     data: Buffer;
   }): Promise<string | null> {
     try {
-      const client = await this.getClient();
+      const client = await this.getNotion();
       const createResponse = await client.fileUploads.create({
         mode: "single_part",
         filename: file.filename,
@@ -199,7 +208,7 @@ export class NormClient {
         } as BlockObjectRequest;
       });
 
-      const client = await this.getClient();
+      const client = await this.getNotion();
       await client.blocks.children.append({
         block_id: pageId,
         children,
