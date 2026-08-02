@@ -79,6 +79,17 @@ const products = await Product.query("database-id", {
   filter: { property: "Status", select: { equals: "active" } },
   sorts: [{ property: "Price", direction: "ascending" }],
 });
+
+// Iterated query — handles pagination automatically
+for await (const batch of Product.iteratedQuery("database-id", {
+  filter: { property: "Status", select: { equals: "active" } },
+  sorts: [{ property: "Price", direction: "ascending" }],
+})) {
+  // `batch` is an array of up-to-100 parsed pages 
+  for (const product of batch) {
+    console.log(product.title, product.price);
+  }
+}
 ```
 
 ### Create
@@ -174,6 +185,29 @@ const article = await Article.retrieve("page-id", {
 
 ---
 
+## Iterated query (auto-pagination)
+
+`query()` returns a single page of results (up to 100). For large databases, use `iteratedQuery()` instead. It automatically fetches every page behind the scenes:
+
+```ts
+for await (const batch of Product.iteratedQuery("database-id", {
+  filter: { property: "Status", select: { equals: "active" } },
+  sorts: [{ property: "Price", direction: "ascending" }],
+})) {
+  // Each batch is an array of fully-parsed pages
+  console.log(`got ${batch.length} products`);
+  for (const product of batch) {
+    processProduct(product);
+  }
+}
+```
+
+`iteratedQuery()` is an **async generator**. It yields one array per API call. The `for await` loop handles the cursor plumbing automatically; you just process each batch as it arrives.
+
+It accepts the same options as `query()` (`filter`, `sorts`, `pageSize`).
+
+---
+
 ## API
 
 ### Builders (`n.*`)
@@ -203,6 +237,7 @@ const article = await Article.retrieve("page-id", {
 |---|---|
 | `model.retrieve(pageId)` | `T \| null` |
 | `model.query(dbId, opts)` | `T[]` |
+| `model.iteratedQuery(dbId, opts)` | `AsyncGenerator<T[]>` |
 | `model.parse(data)` | `T` |
 | `model.parsePage(page)` | `T` |
 | `model.create(input)` | `string \| null` |
