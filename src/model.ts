@@ -168,6 +168,8 @@ export function defineObject<TShape extends ZodRawShape>(
             ),
           ),
         );
+
+        if (response.pageSize <= 0) break;
       } while (nextCursor);
 
       return pageCount;
