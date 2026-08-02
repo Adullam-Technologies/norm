@@ -31,10 +31,15 @@ export interface RetrieveOptions {
 export interface QueryOpts extends RetrieveOptions {
   filter?: QueryDataSourceParameters["filter"];
   sorts?: QueryDataSourceParameters["sorts"];
+  pageSize?: number;
+  startCursor?: string;
 }
 
 export interface QueryDatabaseResult {
   results: PageObjectResponse[];
+  pageSize: number;
+  hasMore?: boolean;
+  nextCursor?: string;
 }
 
 export interface CreatePageInput {
