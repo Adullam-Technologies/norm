@@ -111,6 +111,34 @@ await Product.create({
 
 > Property names are your TypeScript field names — typos are compile errors.
 
+### Update
+
+Pass only the fields you want to change. `norm` translates to Notion format.
+
+```ts
+await Product.update({
+  pageId: "page-id",
+  properties: {
+    price: 129.99,
+    status: "draft",
+  },
+});
+```
+
+Same translation rules as `create()` — simple values in, Notion format out. Unspecified properties are left untouched.
+
+You can also update page markdown:
+
+```ts
+await Product.update({
+  pageId: "page-id",
+  properties: { title: "New Title" },
+  markdown: "# Updated content",
+});
+```
+
+Returns `true` on success, `false` on failure.
+
 ---
 
 ## More fields
@@ -241,6 +269,7 @@ It accepts the same options as `query()` (`filter`, `sorts`, `pageSize`).
 | `model.parse(data)` | `T` |
 | `model.parsePage(page)` | `T` |
 | `model.create(input)` | `string \| null` |
+| `model.update(input)` | `boolean` |
 
 ### `NormClient` (low-level)
 
@@ -249,6 +278,8 @@ It accepts the same options as `query()` (`filter`, `sorts`, `pageSize`).
 | `norm.queryDatabase()` | Raw Notion query |
 | `norm.getPageById()` | Raw page fetch |
 | `norm.getPageMarkdown()` | Page as markdown |
+| `norm.updatePage()` | Update page properties |
+| `norm.updatePageMarkdown()` | Update page content |
 | `norm.uploadFile()` | Upload to Notion |
 | `norm.appendFileBlocks()` | Attach files to page |
 
