@@ -5,6 +5,8 @@ import type {
   GetPageParameters,
   PageObjectResponse,
   QueryDataSourceParameters,
+  UpdatePageParameters,
+  UpdatePageMarkdownParameters,
 } from "@notionhq/client/build/src/api-endpoints";
 import type { z, ZodType, ZodRawShape, ZodObject } from "zod";
 import type {
@@ -12,6 +14,7 @@ import type {
   RetrieveOptions,
   QueryDatabaseResult,
   CreatePageInput,
+  UpdatePageInput,
   GetPageByIdOptions,
   NormAttachment,
 } from "./types";
@@ -141,6 +144,35 @@ export class NormClient {
     } catch (error) {
       this.onError?.(error as Error, { parent: input.parent });
       return null;
+    }
+  }
+
+  async updatePage(input: UpdatePageInput): Promise<boolean> {
+    try {
+      const client = await this.getNotion();
+      await client.pages.update({
+        page_id: input.pageId,
+        properties: input.properties as UpdatePageParameters["properties"],
+      });
+      return true;
+    } catch (error) {
+      this.onError?.(error as Error, { pageId: input.pageId });
+      return false;
+    }
+  }
+
+  async updatePageMarkdown(pageId: string, markdown: string): Promise<boolean> {
+    try {
+      const client = await this.getNotion();
+      await client.pages.updateMarkdown({
+        page_id: pageId,
+        type: "replace_content",
+        replace_content: { new_str: markdown },
+      } as UpdatePageMarkdownParameters);
+      return true;
+    } catch (error) {
+      this.onError?.(error as Error, { pageId });
+      return false;
     }
   }
 

@@ -48,6 +48,12 @@ export interface CreatePageInput {
   markdown?: string;
 }
 
+export interface UpdatePageInput {
+  pageId: string;
+  properties: Record<string, unknown>;
+  markdown?: string;
+}
+
 export interface GetPageByIdOptions {
   filterProperties?: string[];
 }

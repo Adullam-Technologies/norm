@@ -4,6 +4,7 @@ export type {
   RetrieveOptions,
   QueryOpts,
   CreatePageInput,
+  UpdatePageInput,
   GetPageByIdOptions,
   NormAttachment,
   QueryDatabaseResult,
