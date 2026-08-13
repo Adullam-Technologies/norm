@@ -11,6 +11,8 @@ function makeMockClient() {
       retrieve: vi.fn(),
       retrieveMarkdown: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
+      updateMarkdown: vi.fn(),
     },
     blocks: {
       children: {
@@ -59,7 +61,9 @@ describe("NormClient", () => {
     });
 
     it("returns results array on success", async () => {
-      mockClient.dataSources.query.mockResolvedValue({ results: [{ id: "p1" }] });
+      mockClient.dataSources.query.mockResolvedValue({
+        results: [{ id: "p1" }],
+      });
       const result = await norm.queryDatabase("ds_123");
       expect(result.results).toHaveLength(1);
     });
@@ -74,7 +78,9 @@ describe("NormClient", () => {
 
       const result = await normWithHandler.queryDatabase("ds_123");
       expect(result.results).toEqual([]);
-      expect(onError).toHaveBeenCalledWith(expect.any(Error), { dataSourceId: "ds_123" });
+      expect(onError).toHaveBeenCalledWith(expect.any(Error), {
+        dataSourceId: "ds_123",
+      });
     });
   });
 
@@ -88,7 +94,10 @@ describe("NormClient", () => {
       await norm.getPageById("p1", { filterProperties: ["title"] });
 
       expect(mockClient.pages.retrieve).toHaveBeenCalledWith(
-        expect.objectContaining({ page_id: "p1", filter_properties: ["title"] }),
+        expect.objectContaining({
+          page_id: "p1",
+          filter_properties: ["title"],
+        }),
       );
     });
 
@@ -114,7 +123,9 @@ describe("NormClient", () => {
 
   describe("getPageMarkdown", () => {
     it("returns markdown string on success", async () => {
-      mockClient.pages.retrieveMarkdown.mockResolvedValue({ markdown: "# Hello" });
+      mockClient.pages.retrieveMarkdown.mockResolvedValue({
+        markdown: "# Hello",
+      });
       const result = await norm.getPageMarkdown("p1");
       expect(result).toBe("# Hello");
     });
@@ -164,7 +175,85 @@ describe("NormClient", () => {
         properties: {},
       });
       expect(result).toBeNull();
-      expect(onError).toHaveBeenCalledWith(expect.any(Error), expect.any(Object));
+      expect(onError).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.any(Object),
+      );
+    });
+  });
+
+  describe("updatePage", () => {
+    it("calls pages.update with page_id and properties", async () => {
+      mockClient.pages.update.mockResolvedValue({
+        id: "page-1",
+        properties: {},
+      });
+      const result = await norm.updatePage({
+        pageId: "page-1",
+        properties: { title: [{ text: { content: "Updated" } }] },
+      });
+
+      expect(mockClient.pages.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          page_id: "page-1",
+          properties: { title: [{ text: { content: "Updated" } }] },
+        }),
+      );
+      expect(result).toBe(true);
+    });
+
+    it("returns false and calls onError on failure", async () => {
+      const onError = vi.fn();
+      const normWithHandler = new NormClient({
+        client: mockClient as unknown as NormConfig["client"],
+        onError,
+      });
+      mockClient.pages.update.mockRejectedValue(new Error("update failed"));
+
+      const result = await normWithHandler.updatePage({
+        pageId: "page-1",
+        properties: {},
+      });
+      expect(result).toBe(false);
+      expect(onError).toHaveBeenCalledWith(expect.any(Error), {
+        pageId: "page-1",
+      });
+    });
+  });
+
+  describe("updatePageMarkdown", () => {
+    it("calls pages.updateMarkdown with replace_content strategy", async () => {
+      mockClient.pages.updateMarkdown.mockResolvedValue({ markdown: "# New" });
+      const result = await norm.updatePageMarkdown("page-1", "# New content");
+
+      expect(mockClient.pages.updateMarkdown).toHaveBeenCalledWith(
+        expect.objectContaining({
+          page_id: "page-1",
+          type: "replace_content",
+          replace_content: { new_str: "# New content" },
+        }),
+      );
+      expect(result).toBe(true);
+    });
+
+    it("returns false and calls onError on failure", async () => {
+      const onError = vi.fn();
+      const normWithHandler = new NormClient({
+        client: mockClient as unknown as NormConfig["client"],
+        onError,
+      });
+      mockClient.pages.updateMarkdown.mockRejectedValue(
+        new Error("markdown failed"),
+      );
+
+      const result = await normWithHandler.updatePageMarkdown(
+        "page-1",
+        "# New",
+      );
+      expect(result).toBe(false);
+      expect(onError).toHaveBeenCalledWith(expect.any(Error), {
+        pageId: "page-1",
+      });
     });
   });
 
@@ -200,7 +289,9 @@ describe("NormClient", () => {
         data: Buffer.from("hello"),
       });
       expect(result).toBeNull();
-      expect(onWarn).toHaveBeenCalledWith(expect.any(String), { filename: "test.txt" });
+      expect(onWarn).toHaveBeenCalledWith(expect.any(String), {
+        filename: "test.txt",
+      });
     });
 
     it("returns null and calls onError on failure", async () => {
@@ -209,7 +300,9 @@ describe("NormClient", () => {
         client: mockClient as unknown as NormConfig["client"],
         onError,
       });
-      mockClient.fileUploads.create.mockRejectedValue(new Error("upload failed"));
+      mockClient.fileUploads.create.mockRejectedValue(
+        new Error("upload failed"),
+      );
 
       const result = await normWithHandler.uploadFile({
         filename: "test.txt",
@@ -217,7 +310,9 @@ describe("NormClient", () => {
         data: Buffer.from("hello"),
       });
       expect(result).toBeNull();
-      expect(onError).toHaveBeenCalledWith(expect.any(Error), { filename: "test.txt" });
+      expect(onError).toHaveBeenCalledWith(expect.any(Error), {
+        filename: "test.txt",
+      });
     });
   });
 
@@ -246,7 +341,9 @@ describe("NormClient", () => {
         client: mockClient as unknown as NormConfig["client"],
         onError,
       });
-      mockClient.blocks.children.append.mockRejectedValue(new Error("append failed"));
+      mockClient.blocks.children.append.mockRejectedValue(
+        new Error("append failed"),
+      );
 
       const result = await normWithHandler.appendFileBlocks("p1", [
         { fileUploadId: "f1", blockType: "file" },

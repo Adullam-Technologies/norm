@@ -20,6 +20,11 @@ export interface NormModel<T, CreateProps> {
     properties: CreateProps;
     markdown?: string;
   }): Promise<string | null>;
+  update(input: {
+    pageId: string;
+    properties: Partial<CreateProps>;
+    markdown?: string;
+  }): Promise<boolean>;
   query(databaseId: string, opts?: QueryOpts): Promise<T[]>;
   iteratedQuery(
     databaseId: string,
@@ -112,19 +117,24 @@ export function defineObject<TShape extends ZodRawShape>(
       );
     },
     async create(input) {
-      const translated: Record<string, unknown> = {};
-      const props = input.properties as Record<string, unknown>;
-      for (const [propKey, value] of Object.entries(props)) {
-        const { extractor } = findExtractorByProperty(finalShape, propKey);
-        if (!extractor) continue;
-        const translatedValue = translateProperty(extractor, value);
-        translated[propKey] = translatedValue;
-      }
+      const translated = translateProperties(finalShape, input.properties);
       return client.createPage({
         parent: input.parent,
         properties: translated,
         markdown: input.markdown,
       });
+    },
+    async update(input) {
+      const translated = translateProperties(finalShape, input.properties);
+      const ok = await client.updatePage({
+        pageId: input.pageId,
+        properties: translated,
+      });
+      if (!ok) return false;
+      if (input.markdown !== undefined) {
+        return client.updatePageMarkdown(input.pageId, input.markdown);
+      }
+      return true;
     },
     async query(databaseId, queryOpts) {
       const { results } = await client.queryDatabase(databaseId, {
@@ -214,4 +224,19 @@ function findExtractorByProperty(
     }
   }
   return {};
+}
+
+/** Translate simplified property inputs into Notion's verbose property format. */
+function translateProperties(
+  shape: ZodRawShape,
+  props: Record<string, unknown>,
+): Record<string, unknown> {
+  const translated: Record<string, unknown> = {};
+  for (const [propKey, value] of Object.entries(props)) {
+    const { extractor } = findExtractorByProperty(shape, propKey);
+    if (!extractor) continue;
+    const translatedValue = translateProperty(extractor, value);
+    translated[propKey] = translatedValue;
+  }
+  return translated;
 }
