@@ -277,6 +277,7 @@ It accepts the same options as `query()` (`filter`, `sorts`, `pageSize`).
 |---|---|
 | `norm.queryDatabase()` | Raw Notion query |
 | `norm.getPageById()` | Raw page fetch |
+| `norm.createPage()` | Create a page |
 | `norm.getPageMarkdown()` | Page as markdown |
 | `norm.updatePage()` | Update page properties |
 | `norm.updatePageMarkdown()` | Update page content |
