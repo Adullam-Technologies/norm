@@ -12,6 +12,8 @@ function makeMockClient() {
       retrieve: vi.fn(),
       retrieveMarkdown: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
+      updateMarkdown: vi.fn(),
     },
     blocks: { children: { append: vi.fn() } },
     fileUploads: { create: vi.fn(), send: vi.fn() },
@@ -425,6 +427,202 @@ describe("norm.object (model factory)", () => {
       expect(call.properties.tags).toEqual({
         multi_select: [{ name: "a" }, { name: "b" }],
       });
+    });
+  });
+
+  describe("update", () => {
+    it("translates simplified properties to Notion format and calls updatePage", async () => {
+      mockClient.pages.update.mockResolvedValue({
+        id: "page-1",
+        properties: {},
+      });
+
+      const Model = norm.object({
+        title: n.title(),
+        order: n.number({ property: "order" }),
+        published: n.checkbox({ property: "published" }),
+        youtubeUrl: n.url({ property: "youtube_url" }),
+      });
+
+      const result = await Model.update({
+        pageId: "page-1",
+        properties: {
+          title: "Updated Lesson",
+          order: 20,
+          published: false,
+          youtube_url: "https://youtube.com/watch?v=updated",
+        },
+      });
+
+      expect(mockClient.pages.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          page_id: "page-1",
+        }),
+      );
+      expect(result).toBe(true);
+
+      // Verify the properties were translated
+      const call = mockClient.pages.update.mock.calls[0]![0] as {
+        properties: Record<string, unknown>;
+      };
+      expect(call.properties.title).toEqual({
+        title: [{ text: { content: "Updated Lesson" } }],
+      });
+      expect(call.properties.order).toEqual({ number: 20 });
+      expect(call.properties.published).toEqual({ checkbox: false });
+      expect(call.properties.youtube_url).toEqual({
+        url: "https://youtube.com/watch?v=updated",
+      });
+    });
+
+    it("handles null values", async () => {
+      mockClient.pages.update.mockResolvedValue({
+        id: "page-1",
+        properties: {},
+      });
+
+      const Model = norm.object({
+        title: n.title(),
+        order: n.number({ property: "order" }),
+        youtubeUrl: n.url({ property: "youtube_url" }),
+      });
+
+      await Model.update({
+        pageId: "page-1",
+        properties: {
+          order: null,
+          youtube_url: null,
+        },
+      });
+
+      const call = mockClient.pages.update.mock.calls[0]![0] as {
+        properties: Record<string, unknown>;
+      };
+      expect(call.properties.order).toEqual({ number: null });
+      expect(call.properties.youtube_url).toEqual({ url: null });
+    });
+
+    it("translates relation and multiSelect", async () => {
+      mockClient.pages.update.mockResolvedValue({
+        id: "page-1",
+        properties: {},
+      });
+
+      const Model = norm.object({
+        title: n.title(),
+        week: n.relation({ property: "week" }),
+        tags: n.multiSelect({ property: "tags" }),
+      });
+
+      await Model.update({
+        pageId: "page-1",
+        properties: {
+          week: ["week-1", "week-2"],
+          tags: ["a", "b"],
+        },
+      });
+
+      const call = mockClient.pages.update.mock.calls[0]![0] as {
+        properties: Record<string, unknown>;
+      };
+      expect(call.properties.week).toEqual({
+        relation: [{ id: "week-1" }, { id: "week-2" }],
+      });
+      expect(call.properties.tags).toEqual({
+        multi_select: [{ name: "a" }, { name: "b" }],
+      });
+    });
+
+    it("supports partial property updates", async () => {
+      mockClient.pages.update.mockResolvedValue({
+        id: "page-1",
+        properties: {},
+      });
+
+      const Model = norm.object({
+        title: n.title(),
+        order: n.number({ property: "order" }),
+        published: n.checkbox({ property: "published" }),
+      });
+
+      await Model.update({
+        pageId: "page-1",
+        properties: {
+          order: 99,
+        },
+      });
+
+      const call = mockClient.pages.update.mock.calls[0]![0] as {
+        properties: Record<string, unknown>;
+      };
+      expect(call.properties.order).toEqual({ number: 99 });
+      expect(call.properties.title).toBeUndefined();
+      expect(call.properties.published).toBeUndefined();
+    });
+
+    it("updates markdown via updatePageMarkdown when provided", async () => {
+      mockClient.pages.update.mockResolvedValue({
+        id: "page-1",
+        properties: {},
+      });
+      mockClient.pages.updateMarkdown.mockResolvedValue({ markdown: "# New" });
+
+      const Model = norm.object({
+        title: n.title(),
+        markdownContent: n.markdown().optional(),
+      });
+
+      const result = await Model.update({
+        pageId: "page-1",
+        properties: {
+          title: "Updated Title",
+        },
+        markdown: "# New content",
+      });
+
+      expect(result).toBe(true);
+      expect(mockClient.pages.updateMarkdown).toHaveBeenCalledWith(
+        expect.objectContaining({
+          page_id: "page-1",
+          type: "replace_content",
+          replace_content: { new_str: "# New content" },
+        }),
+      );
+    });
+
+    it("skips markdown update when not provided", async () => {
+      mockClient.pages.update.mockResolvedValue({
+        id: "page-1",
+        properties: {},
+      });
+
+      const Model = norm.object({
+        title: n.title(),
+      });
+
+      await Model.update({
+        pageId: "page-1",
+        properties: { title: "Updated" },
+      });
+
+      expect(mockClient.pages.updateMarkdown).not.toHaveBeenCalled();
+    });
+
+    it("returns false when updatePage fails", async () => {
+      mockClient.pages.update.mockRejectedValue(new Error("update failed"));
+
+      const Model = norm.object({
+        title: n.title(),
+      });
+
+      const result = await Model.update({
+        pageId: "page-1",
+        properties: { title: "Updated" },
+      });
+
+      expect(result).toBe(false);
+      // Markdown should not be attempted when properties update fails
+      expect(mockClient.pages.updateMarkdown).not.toHaveBeenCalled();
     });
   });
 
